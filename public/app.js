@@ -1,5 +1,5 @@
 // public/app.js
-// Точка входа приложения. Здесь подключаем загрузчик, реестр парсеров, схему, таблицу и экспорт.
+// Точка входа приложения.
 
 import { initLoader } from './modules/loader.js';
 import { ParserRegistry } from './modules/parser-registry.js';
@@ -7,115 +7,116 @@ import { Schema } from './modules/schema.js';
 import { Table } from './modules/table.js';
 import { Exporter } from './modules/exporter.js';
 
-// Глобальные (в рамках вкладки) хранилища текущих данных
+// Глобальное состояние
 const AppState = {
-    unifiedRows: [],
-    rawPayload: null,
-    category: null,
-    sourceName: '—', // название активного парсера/источника
-    fileName: '—'    // имя загруженного файла
+    unifiedRows: [],     // накапливаем все строки из всех файлов
+    rawPayloads: [],     // массив исходных XML (для payloadRef при желании)
+    lastCategory: null,  // категория последнего обработанного файла
+    sourceName: '—',
+    fileName: '—',
+    filesProcessed: 0
 };
 
-// Инициализация таблицы
+// Таблица
 const table = new Table({
     headEl: document.getElementById('tableHead'),
     bodyEl: document.getElementById('tableBody'),
     columns: Schema.getColumns()
 });
 
-// Обновление UI статуса
+// UI helpers
 function setStatus(msg, type = 'info'){
     const el = document.getElementById('status');
     el.textContent = msg;
     el.style.color = type === 'error' ? '#c62828' : '#6b7c93';
 }
-
-// Установка «Парсер: <имя>»
 function setSourceName(name){
     AppState.sourceName = name || '—';
     const el = document.getElementById('sourceName');
     if (el) el.textContent = AppState.sourceName;
 }
-
-// Установка «Файл: <имя>»
 function setFileName(name){
     AppState.fileName = name || '—';
     const el = document.getElementById('fileName');
     if (el) el.textContent = AppState.fileName;
 }
 
-// При старте показываем дефолт
+// Стартовые значения
 setSourceName('—');
 setFileName('—');
 
-// Инициализация загрузчика (только XML на этом этапе)
+// Инициализация загрузчика
 initLoader({
     fileInputEl: document.getElementById('fileInput'),
     dropZoneEl: document.getElementById('dropZone'),
     onFileContent: async (content, fileName) => {
+        // Для каждого файла — отдельная попытка парсинга
         setStatus(`Файл «${fileName}» загружен. Анализируем...`);
-        setSourceName('—');  // сброс перед попыткой парсинга
         setFileName(fileName || '—');
+        setSourceName('—'); // сброс до загрузки парсера
 
-        AppState.rawPayload = content;
-
-        // 1) Определяем поставщика и категорию из XML
+        // Определяем поставщика
         const { supplierCode, category } = ParserRegistry.detectFromXml(content);
         if(!supplierCode){
-            setStatus('Не удалось определить поставщика из XML. Убедитесь, что в корне есть <Supplier ...> или <order_snapshot>.', 'error');
+            setStatus(`Не удалось определить поставщика из XML файла «${fileName}». Пропускаю.`, 'error');
             return;
         }
 
-        // 2) Динамически подгружаем парсер по коду
         try{
-            setStatus(`Определён поставщик: ${supplierCode} (${category || 'category?'}). Загружаем парсер...`);
             const parser = await ParserRegistry.loadXmlParser(supplierCode);
             if(!parser?.parse){
-                setStatus(`Парсер "${supplierCode}" не содержит метод parse()`, 'error');
+                setStatus(`Парсер "${supplierCode}" не содержит метод parse().`, 'error');
                 return;
             }
 
-            // Поставим «Парсер: …»
+            // Показать имя парсера/файл
             const parserDisplay = parser.displayName || parser.supplierCode || supplierCode;
             setSourceName(parserDisplay);
 
-            // 3) Парсим и маппим к единой схеме
+            // Парсинг
             const result = await parser.parse(content);
             if(!result?.rows?.length){
-                setStatus('Парсер отработал, но данных не найдено.', 'error');
+                setStatus(`Парсер отработал, но данных не найдено в «${fileName}».`, 'error');
                 return;
             }
-            AppState.category = result.category;
-            AppState.unifiedRows = Schema.normalizeRows(result.rows);
 
-            // 4) Рендер таблицы
+            // Нормализуем и добавляем в общий список
+            const normalized = Schema.normalizeRows(result.rows);
+            // В normalized сохраняются наши вычисления (типы/даты/булевы)
+            AppState.unifiedRows.push(...normalized);
+            AppState.rawPayloads.push(content);
+            AppState.lastCategory = result.category || category || null;
+            AppState.filesProcessed += 1;
+
+            // Перерисовка
             table.setRows(AppState.unifiedRows);
-            setStatus(`Готово. Найдено записей: ${AppState.unifiedRows.length}.`);
+            setStatus(`Готово: добавлено ${normalized.length} записей из «${fileName}». Всего строк: ${AppState.unifiedRows.length}. Файлов обработано: ${AppState.filesProcessed}.`);
         }catch(err){
             console.error(err);
-            setStatus(`Ошибка загрузки/исполнения парсера: ${err.message}`, 'error');
-            setSourceName('—');
+            setStatus(`Ошибка при обработке «${fileName}»: ${err.message}`, 'error');
+            // sourceName оставляем последним успешным
         }
     }
 });
 
-// Экспорт JSON
+// Экспорт JSON (поддержка нескольких категорий)
 document.getElementById('exportJsonBtn').addEventListener('click', ()=>{
-    if(!AppState.unifiedRows?.length || !AppState.category){
-        setStatus('Нет данных для экспорта. Сначала загрузите XML и дождитесь таблицы.', 'error');
+    if(!AppState.unifiedRows?.length){
+        setStatus('Нет данных для экспорта. Сначала загрузите XML-файлы.', 'error');
         return;
     }
     const json = Exporter.toUnifiedJson({
-        category: AppState.category,
+        // Передаём все строки, Exporter сам разложит их по веткам по полю row.category
         rows: AppState.unifiedRows,
-        rawPayload: AppState.rawPayload
+        // для совместимости оставим rawPayloads: можно склеить/сохранить последний — на ваш выбор
+        rawPayload: AppState.rawPayloads[AppState.rawPayloads.length - 1] || null
     });
 
     const blob = new Blob([JSON.stringify(json, null, 2)], {type: 'application/json;charset=utf-8'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `export_${AppState.category}.json`;
+    a.download = `export.json`;
     a.click();
     URL.revokeObjectURL(url);
     setStatus('JSON сформирован и выгружен.');

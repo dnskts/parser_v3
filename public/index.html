@@ -10,10 +10,10 @@
 <header class="bx-header">
     <h1>Universal Supplier Parser</h1>
     <div class="bx-actions">
-        <!-- Кнопка выбора файла -->
+        <!-- Кнопка выбора файлов (ТЕПЕРЬ multiple) -->
         <label class="bx-button">
             Загрузить XML
-            <input type="file" id="fileInput" accept=".xml" hidden />
+            <input type="file" id="fileInput" accept=".xml" multiple hidden />
         </label>
 
         <!-- Экспорт текущей таблицы в JSON -->
@@ -24,7 +24,7 @@
 <main class="container">
     <!-- Зона drag&drop -->
     <div id="dropZone" class="dropzone">
-        Перетащите XML-файл сюда или используйте кнопку «Загрузить XML»
+        Перетащите один или несколько XML-файлов сюда или используйте кнопку «Загрузить XML»
     </div>
 
     <!-- Панель статуса -->
