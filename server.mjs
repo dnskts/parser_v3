@@ -1,106 +1,156 @@
 // server.mjs
-// Лёгкий статический сервер для разработки (без зависимостей).
-// Раздаёт файлы из корня проекта, чтобы работали пути /public/... и /client/...
+// Простой Node-сервер без внешних зависимостей.
+// Раздаёт статику и даёт REST для управления файлами-провайдерами (client/parsers/api/*.json).
 
-import http from 'http';
-import fs from 'fs';
-import fsp from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import http from 'node:http';
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import path from 'node:path';
+import url from 'node:url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
+const ROOT = __dirname;              // корень проекта (там, где public/, client/)
+const API_DIR = path.join(ROOT, 'client', 'parsers', 'api');
 
-// === НАСТРОЙКИ ===
-const HOST = '127.0.0.1';
-const PORT = 8000;                 // при занятости порта поменяйте, например на 8080
-const ROOT = __dirname;            // корень проекта (где лежат /public и /client)
-const DEFAULT_FILE = '/public/index.html';
+// Убедимся, что папка есть
+fs.mkdirSync(API_DIR, { recursive: true });
 
-// MIME-типы (важно для ES-модулей: .js -> text/javascript)
-const MIME = {
-    '.html': 'text/html; charset=utf-8',
-    '.htm':  'text/html; charset=utf-8',
-    '.js':   'text/javascript; charset=utf-8',
-    '.mjs':  'text/javascript; charset=utf-8',
-    '.css':  'text/css; charset=utf-8',
-    '.json': 'application/json; charset=utf-8',
-    '.xml':  'application/xml; charset=utf-8',
-    '.svg':  'image/svg+xml',
-    '.png':  'image/png',
-    '.jpg':  'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.gif':  'image/gif',
-    '.woff': 'font/woff',
-    '.woff2':'font/woff2',
-    '.txt':  'text/plain; charset=utf-8'
-};
+function send(res, code, data, headers = {}) {
+    const h = { 'Cache-Control': 'no-store', ...headers };
+    if (typeof data === 'object' && !Buffer.isBuffer(data)) {
+        h['Content-Type'] = 'application/json; charset=utf-8';
+        res.writeHead(code, h);
+        res.end(JSON.stringify(data));
+    } else {
+        res.writeHead(code, h);
+        res.end(data);
+    }
+}
 
-// Безопасное построение пути (без выхода выше ROOT)
-function safeJoin(root, reqPath) {
-    const decoded = decodeURIComponent(reqPath);
-    const clean = decoded.split('?')[0].split('#')[0];
-    const p = path.normalize(path.join(root, clean));
-    if (!p.startsWith(root)) return null; // попытка выйти за корень
-    return p;
+function contentTypeByExt(ext) {
+    switch (ext) {
+        case '.html': return 'text/html; charset=utf-8';
+        case '.js':   return 'application/javascript; charset=utf-8';
+        case '.css':  return 'text/css; charset=utf-8';
+        case '.json': return 'application/json; charset=utf-8';
+        case '.svg':  return 'image/svg+xml';
+        case '.png':  return 'image/png';
+        case '.jpg':
+        case '.jpeg': return 'image/jpeg';
+        default:      return 'application/octet-stream';
+    }
+}
+
+function serveStatic(req, res) {
+    // ВАЖНО: не используем fileURLToPath для HTTP-URL; просто парсим путь
+    const { pathname: rawPath } = new URL(req.url, 'http://localhost');
+    // Корень сайта редиректим на public/index.html
+    const pathname = rawPath === '/' ? '/public/index.html' : rawPath;
+
+    // Нормализуем путь, обрезаем ведущий слэш и собираем абсолютный путь внутри ROOT
+    const safeRelative = pathname.replace(/^\/+/, '');
+    const absPath = path.join(ROOT, safeRelative);
+
+    // Защита от выхода за пределы корня
+    if (!absPath.startsWith(ROOT)) {
+        return send(res, 403, 'Forbidden');
+    }
+
+    fsp.readFile(absPath)
+        .then(buf => {
+            const ct = contentTypeByExt(path.extname(absPath).toLowerCase());
+            send(res, 200, buf, { 'Content-Type': ct });
+        })
+        .catch(() => send(res, 404, 'Not found'));
+}
+
+async function listProviders() {
+    const files = await fsp.readdir(API_DIR);
+    const out = [];
+    for (const f of files) {
+        if (!f.endsWith('.json')) continue;
+        const p = path.join(API_DIR, f);
+        try {
+            const txt = await fsp.readFile(p, 'utf-8');
+            const obj = JSON.parse(txt);
+            obj.id = obj.id || path.basename(f, '.json');
+            out.push(obj);
+        } catch { /* пропускаем битые */ }
+    }
+    out.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    return out;
+}
+
+function genId() { return 'p_' + Math.random().toString(36).slice(2, 10); }
+
+async function createProvider(body) {
+    const name = (body.name || '').trim();
+    const baseUrl = (body.baseUrl || '').trim();
+    const type = (body.type || 'air').trim();
+    if (!name || !baseUrl) throw new Error('name and baseUrl are required');
+
+    const id = genId();
+    const record = {
+        id,
+        name,
+        type,
+        baseUrl,
+        authType: body.authType || 'none',
+        token: body.token || '',
+        username: body.username || '',
+        password: body.password || '',
+        note: body.note || ''
+    };
+    const dest = path.join(API_DIR, id + '.json');
+    await fsp.writeFile(dest, JSON.stringify(record, null, 2), 'utf-8');
+    return record;
+}
+
+async function deleteProvider(id) {
+    const p = path.join(API_DIR, id + '.json');
+    await fsp.unlink(p);
 }
 
 const server = http.createServer(async (req, res) => {
     try {
-        let reqPath = req.url || '/';
+        const { pathname } = new URL(req.url, 'http://localhost');
 
-        // Редирект корня на /public/index.html
-        if (reqPath === '/' || reqPath === '') {
-            reqPath = DEFAULT_FILE;
+        // REST: /api/providers
+        if (pathname === '/api/providers' && req.method === 'GET') {
+            const list = await listProviders();
+            return send(res, 200, list);
         }
-
-        // Безопасный абсолютный путь к файлу
-        let filePath = safeJoin(ROOT, reqPath);
-        if (!filePath) {
-            res.writeHead(403, {'Content-Type': 'text/plain; charset=utf-8'});
-            return res.end('Forbidden');
-        }
-
-        // Если запрашивают директорию — пробуем index.html внутри неё
-        let stat;
-        try {
-            stat = await fsp.stat(filePath);
-            if (stat.isDirectory()) {
-                filePath = path.join(filePath, 'index.html');
-                stat = await fsp.stat(filePath);
+        if (pathname === '/api/providers' && req.method === 'POST') {
+            const chunks = [];
+            for await (const ch of req) chunks.push(ch);
+            const body = JSON.parse(Buffer.concat(chunks).toString('utf-8') || '{}');
+            try {
+                const created = await createProvider(body);
+                return send(res, 201, created);
+            } catch (e) {
+                return send(res, 400, String(e.message || e));
             }
-        } catch {
-            // 404
-            res.writeHead(404, {'Content-Type': 'text/plain; charset=utf-8'});
-            return res.end('Not Found');
+        }
+        if (pathname.startsWith('/api/providers/') && req.method === 'DELETE') {
+            const id = pathname.split('/').pop();
+            try {
+                await deleteProvider(id);
+                res.writeHead(204, { 'Cache-Control': 'no-store' });
+                return res.end();
+            } catch {
+                return send(res, 404, 'Not found');
+            }
         }
 
-        const ext = path.extname(filePath).toLowerCase();
-        const mime = MIME[ext] || 'application/octet-stream';
-
-        // Заголовки: кэш отключаем, CORS на всякий случай
-        res.writeHead(200, {
-            'Content-Type': mime,
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0',
-            'Access-Control-Allow-Origin': '*'
-        });
-
-        const stream = fs.createReadStream(filePath);
-        stream.on('error', (err) => {
-            console.error(err);
-            res.writeHead(500, {'Content-Type': 'text/plain; charset=utf-8'});
-            res.end('Internal Server Error');
-        });
-        stream.pipe(res);
-    } catch (err) {
-        console.error(err);
-        res.writeHead(500, {'Content-Type': 'text/plain; charset=utf-8'});
-        res.end('Internal Server Error');
+        // Остальное — статика
+        return serveStatic(req, res);
+    } catch (e) {
+        console.error(e);
+        send(res, 500, 'Server error');
     }
 });
 
-server.listen(PORT, HOST, () => {
-    console.log(`Dev server running at http://${HOST}:${PORT}/public/index.html`);
+const PORT = 8000;
+server.listen(PORT, () => {
+    console.log(`Server ready: http://127.0.0.1:${PORT}/public/index.html`);
 });

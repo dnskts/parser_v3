@@ -8,12 +8,16 @@
 </head>
 <body>
 <header class="bx-header bx-header--compact">
+    <nav class="bx-nav">
+        <a class="bx-nav__link" href="./api.html">API</a>
+    </nav>
     <div class="bx-actions">
         <label class="bx-button bx-button--muted bx-button--sm">
             Загрузить XML
             <input type="file" id="fileInput" accept=".xml" multiple hidden />
         </label>
-        <button id="exportJsonBtn" class="bx-button bx-button--muted bx-button--sm">Экспорт в JSON</button>
+        <button id="loadApiBtn" class="bx-button bx-button--muted bx-button--sm" type="button">Загрузить через API</button>
+        <button id="exportJsonBtn" class="bx-button bx-button--muted bx-button--sm" type="button">Экспорт в JSON</button>
     </div>
 </header>
 
@@ -22,7 +26,6 @@
 
     <div id="sourceBar" class="source-bar">
         <span class="muted">Парсеры:</span>
-        <!-- СПИСОК ПАРСЕРОВ (новый) -->
         <span id="parserList" class="file-list" style="margin-right:12px;"></span>
 
         <span class="muted">Файлы:</span>

@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8" />
+    <title>API поставщики — Universal Supplier Parser</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+<header class="bx-header bx-header--compact">
+    <nav class="bx-nav">
+        <a class="bx-nav__link" href="./index.html">← На главную</a>
+    </nav>
+    <div class="bx-actions">
+        <button id="addProviderBtn" class="bx-button bx-button--muted bx-button--sm" type="button">Добавить</button>
+    </div>
+</header>
+
+<main class="container">
+    <h1 class="page-title">Подключенные API-поставщики</h1>
+    <div id="providerList" class="provider-list"></div>
+</main>
+
+<!-- Модалка добавления -->
+<div id="modalOverlay" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal__header">
+            <h3 id="modalTitle">Добавить поставщика</h3>
+            <button id="modalClose" class="icon-btn" aria-label="Закрыть" type="button">✕</button>
+        </div>
+
+        <div class="modal__body">
+            <div class="form-grid">
+                <label class="form-field">
+                    <span>Название *</span>
+                    <input id="fName" type="text" placeholder="Напр.: MySupplier" />
+                </label>
+
+                <label class="form-field">
+                    <span>Тип данных *</span>
+                    <select id="fType">
+                        <option value="air">Авиа</option>
+                        <option value="rail">Ж/Д</option>
+                        <option value="hotel">Отели</option>
+                        <option value="transfer">Трансферы</option>
+                        <option value="mixed">Смешанный</option>
+                    </select>
+                </label>
+
+                <label class="form-field form-field--full">
+                    <span>Базовый URL *</span>
+                    <input id="fBaseUrl" type="text" placeholder="https://api.example.com/orders" />
+                </label>
+
+                <label class="form-field">
+                    <span>Авторизация</span>
+                    <select id="fAuthType">
+                        <option value="none">Нет</option>
+                        <option value="bearer">Bearer Token</option>
+                        <option value="basic">Basic (логин/пароль)</option>
+                    </select>
+                </label>
+
+                <label class="form-field">
+                    <span>Token</span>
+                    <input id="fToken" type="text" placeholder="для Bearer" />
+                </label>
+
+                <label class="form-field">
+                    <span>Логин</span>
+                    <input id="fUser" type="text" placeholder="для Basic" />
+                </label>
+
+                <label class="form-field">
+                    <span>Пароль</span>
+                    <input id="fPass" type="password" placeholder="для Basic" />
+                </label>
+
+                <label class="form-field form-field--full">
+                    <span>Примечание</span>
+                    <input id="fNote" type="text" placeholder="Произвольный комментарий" />
+                </label>
+            </div>
+            <p class="muted" style="margin-top:8px">
+                Мы только <b>получаем</b> данные о заказах. Ничего не отправляем.
+            </p>
+        </div>
+
+        <div class="modal__actions">
+            <button id="modalSave" class="bx-button bx-button--primary bx-button--sm" type="button">Сохранить</button>
+            <button id="modalCancel" class="bx-button bx-button--muted bx-button--sm" type="button">Отмена</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { ApiProviders } from './modules/api-providers.js';
+
+    window.addEventListener('DOMContentLoaded', () => {
+        const listEl   = document.getElementById('providerList');
+        const overlay  = document.getElementById('modalOverlay');
+        const modal    = overlay.querySelector('.modal');
+        const closeBtn = document.getElementById('modalClose');
+        const cancelBtn= document.getElementById('modalCancel');
+        const saveBtn  = document.getElementById('modalSave');
+        const addBtn   = document.getElementById('addProviderBtn');
+
+        const fName    = document.getElementById('fName');
+        const fType    = document.getElementById('fType');
+        const fBaseUrl = document.getElementById('fBaseUrl');
+        const fAuthType= document.getElementById('fAuthType');
+        const fToken   = document.getElementById('fToken');
+        const fUser    = document.getElementById('fUser');
+        const fPass    = document.getElementById('fPass');
+        const fNote    = document.getElementById('fNote');
+
+        function openModal(){
+            overlay.hidden = false;
+            fName.value = ''; fType.value = 'air'; fBaseUrl.value = '';
+            fAuthType.value = 'none'; fToken.value = ''; fUser.value = ''; fPass.value = ''; fNote.value = '';
+            setTimeout(()=> fName.focus(), 0);
+            document.addEventListener('keydown', onEsc);
+        }
+        function closeModal(){
+            overlay.hidden = true;
+            document.removeEventListener('keydown', onEsc);
+        }
+        function onEsc(e){ if(e.key === 'Escape') closeModal(); }
+
+        // Закрытие по клику на фон
+        overlay.addEventListener('click', (e)=>{ if (e.target === overlay) closeModal(); });
+        // Не даём клику внутри модалки «пробиться» к оверлею
+        modal.addEventListener('click', (e)=> e.stopPropagation());
+        // Кнопки
+        closeBtn.addEventListener('click', closeModal);
+        cancelBtn.addEventListener('click', closeModal);
+        addBtn.addEventListener('click', openModal);
+
+        saveBtn.addEventListener('click', async ()=>{
+            const name = fName.value.trim();
+            const baseUrl = fBaseUrl.value.trim();
+            if (!name || !baseUrl) { alert('Заполните «Название» и «Базовый URL».'); return; }
+
+            try{
+                await ApiProviders.add({
+                    name,
+                    type: fType.value,
+                    baseUrl,
+                    authType: fAuthType.value,
+                    token: fToken.value.trim(),
+                    username: fUser.value.trim(),
+                    password: fPass.value,
+                    note: fNote.value.trim()
+                });
+                closeModal();
+                await renderList();
+            }catch(err){
+                alert('Ошибка сохранения: ' + (err?.message || err));
+            }
+        });
+
+        async function renderList(){
+            listEl.innerHTML = 'Загрузка...';
+            try{
+                const items = await ApiProviders.getAll();
+                listEl.innerHTML = '';
+                if (!items.length){
+                    const empty = document.createElement('div');
+                    empty.className = 'empty';
+                    empty.textContent = 'Пока нет подключений. Нажмите «Добавить».';
+                    listEl.appendChild(empty);
+                    return;
+                }
+                for (const p of items){
+                    const card = document.createElement('div');
+                    card.className = 'provider-card';
+                    card.innerHTML = `
+              <div class="provider-card__row">
+                <div class="provider-card__title">${p.name}</div>
+                <div class="badge">${p.type}</div>
+              </div>
+              <div class="provider-card__row">
+                <div class="muted small">${p.baseUrl}</div>
+              </div>
+              <div class="provider-card__row">
+                <div class="muted small">Auth: ${p.authType}</div>
+                <div class="muted small">${p.note ? '— ' + p.note : ''}</div>
+              </div>
+              <div class="provider-card__actions">
+                <button data-id="${p.id}" class="bx-button bx-button--danger bx-button--xs js-del" type="button">Удалить</button>
+              </div>
+            `;
+                    listEl.appendChild(card);
+                }
+                listEl.querySelectorAll('.js-del').forEach(btn=>{
+                    btn.addEventListener('click', async (e)=>{
+                        const id = e.currentTarget.getAttribute('data-id');
+                        if (!confirm('Удалить подключение?')) return;
+                        await ApiProviders.remove(id);
+                        await renderList();
+                    });
+                });
+            }catch(err){
+                listEl.innerHTML = `<div class="empty">Ошибка загрузки списка: ${(err?.message||err)}</div>`;
+            }
+        }
+
+        // первый рендер
+        renderList();
+    });
+</script>
+</body>
+</html>
