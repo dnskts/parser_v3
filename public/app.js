@@ -1,4 +1,6 @@
 // public/app.js
+// Управление загрузкой файлов, маршрутизация к парсерам, отрисовка таблицы,
+// статусы файлов (успех/ошибка) и теперь — список всех использованных парсеров.
 
 import { initLoader } from './modules/loader.js';
 import { ParserRegistry } from './modules/parser-registry.js';
@@ -7,11 +9,11 @@ import { Table } from './modules/table.js';
 import { Exporter } from './modules/exporter.js';
 
 const AppState = {
-    unifiedRows: [],
-    rawPayloads: [],
-    lastCategory: null,
-    sourceName: '—',
-    files: [] // [{name, ok, message}]
+    unifiedRows: [],       // все собранные строки таблицы
+    rawPayloads: [],       // исходные тексты XML (если нужно)
+    lastCategory: null,    // не критично при смешанных категориях
+    files: [],             // [{name, ok, message}]
+    parsers: []            // уникальные displayName использованных парсеров
 };
 
 const table = new Table({
@@ -20,17 +22,12 @@ const table = new Table({
     columns: Schema.getColumns()
 });
 
-// UI helpers
+// ============== UI helpers ==============
+
 function setStatus(msg, type = 'info'){
     const el = document.getElementById('status');
     el.textContent = msg;
     el.style.color = type === 'error' ? '#c62828' : '#6b7c93';
-}
-
-function setSourceName(name){
-    AppState.sourceName = name || '—';
-    const el = document.getElementById('sourceName');
-    if (el) el.textContent = AppState.sourceName;
 }
 
 function renderFileList(){
@@ -48,9 +45,27 @@ function renderFileList(){
         const tag = document.createElement('span');
         tag.className = 'file-tag ' + (f.ok ? 'success' : 'error');
         tag.textContent = f.name;
-        if (!f.ok && f.message) {
-            tag.title = f.message; // подсказка при наведении
-        }
+        if (!f.ok && f.message) tag.title = f.message; // всплывающая подсказка с ошибкой
+        wrap.appendChild(tag);
+    }
+}
+
+function renderParserList(){
+    const wrap = document.getElementById('parserList');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const names = Array.from(new Set(AppState.parsers)); // уникальные
+    if (!names.length) {
+        const span = document.createElement('span');
+        span.className = 'file-tag';
+        span.textContent = '—';
+        wrap.appendChild(span);
+        return;
+    }
+    for (const name of names) {
+        const tag = document.createElement('span');
+        tag.className = 'file-tag';  // нейтральный бейдж (без зелёного/красного)
+        tag.textContent = name;
         wrap.appendChild(tag);
     }
 }
@@ -62,27 +77,35 @@ function upsertFileStatus(name, { ok, message }){
     renderFileList();
 }
 
-// Инициализация
-setSourceName('—');
+function addParserName(displayName){
+    if (!displayName) return;
+    AppState.parsers.push(displayName);
+    renderParserList();
+}
+
+// Инициализация пустого состояния панелей
 renderFileList();
+renderParserList();
+
+// ============== Лоадер ==============
 
 initLoader({
     fileInputEl: document.getElementById('fileInput'),
 
-    // Очищаем перед новой пачкой
+    // Перед началом новой пачки файлов — очищаем всё
     onBatchStart: async (files) => {
         AppState.unifiedRows = [];
         AppState.rawPayloads = [];
         AppState.lastCategory = null;
-        AppState.sourceName = '—';
         AppState.files = [];
+        AppState.parsers = [];
         table.setRows([]);
-        setSourceName('—');
         renderFileList();
+        renderParserList();
         setStatus(`Очищено. Загружаем файлов: ${files.length}…`);
     },
 
-    // Обработка каждого файла
+    // Содержимое каждого файла
     onFileContent: async (content, fileName) => {
         setStatus(`Файл «${fileName}» загружен. Анализируем...`);
 
@@ -94,7 +117,7 @@ initLoader({
             upsertFileStatus(fileName, { ok: true, message: '' });
         };
 
-        // Определяем поставщика
+        // Определяем поставщика и категорию
         const det = ParserRegistry.detectFromXml(content);
         const supplierCode = det?.supplierCode;
         const category = det?.category;
@@ -112,7 +135,6 @@ initLoader({
             }
 
             const parserDisplay = parser.displayName || parser.supplierCode || supplierCode;
-            setSourceName(parserDisplay);
 
             const result = await parser.parse(content);
 
@@ -130,6 +152,10 @@ initLoader({
 
             table.setRows(AppState.unifiedRows);
             markOk();
+
+            // Добавляем название парсера в общий список (уникальность обеспечит renderParserList)
+            addParserName(parserDisplay);
+
             setStatus(`Готово: добавлено ${normalized.length} записей из «${fileName}». Всего строк: ${AppState.unifiedRows.length}.`);
         }catch(err){
             console.error(err);
@@ -138,7 +164,8 @@ initLoader({
     }
 });
 
-// Экспорт JSON — по строке в блоке
+// ============== Экспорт JSON ==============
+
 document.getElementById('exportJsonBtn').addEventListener('click', ()=>{
     if(!AppState.unifiedRows?.length){
         setStatus('Нет данных для экспорта. Сначала загрузите XML-файлы.', 'error');

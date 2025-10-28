@@ -1,60 +1,55 @@
 // public/modules/exporter.js
-// Экспорт данных из единой таблицы в JSON.
-// ВАЖНО: Экспортируем только согласованный набор полей (по вашим требованиям).
-// Добавлено: "Hotel" (название отеля) и "Rail Service" (сервис ЖД).
+// --------------------------------------------------------------
+// ЭКСПОРТ ДАННЫХ ТАБЛИЦЫ В JSON
+// --------------------------------------------------------------
+// Теперь внутренние ключи уже на английском, поэтому экспорт —
+// это просто аккуратное переименование под нужные "человеческие"
+// заголовки (с пробелами), без лишних преобразований.
+// --------------------------------------------------------------
+
+function val(x){
+    return (x === undefined || x === null) ? '' : x;
+}
 
 function mapRowToExport(r){
-    // Безопасная нормализация: undefined/null -> пустая строка
-    const val = (x) => (x === undefined || x === null ? '' : x);
-
     return {
-        // Идентификаторы / контекст
-        "Product Number":      val(r.nomerProdukta),
-        "Date Created":        val(r.dataSozdaniya),
-        "Product Type":        val(r.tipProdukta),
-        "Operation":           val(r.operatsiya),
-        "Order Number":        val(r.nomerZakaza),
+        "Product Number":      val(r.productNumber),
+        "Date Created":        val(r.dateCreated),
+        "Product Type":        val(r.productType),
+        "Operation":           val(r.operation),
+        "Order Number":        val(r.orderNumber),
 
-        // Пассажир / бронирование / маршрут
-        "Last Name":           val(r.passazhirFamiliya),
-        "First Name":          val(r.passazhirImya),
+        "Last Name":           val(r.lastName),
+        "First Name":          val(r.firstName),
         "PNR":                 val(r.pnr),
-        "Origin":              val(r.punktOtpravleniya),
-        "Destination":         val(r.punktPribytiya),
+        "Origin":              val(r.origin),
+        "Destination":         val(r.destination),
 
-        // Новые поля
-        "Hotel":               val(r.hotelName),     // название отеля (для hotel-product)
-        "Rail Service":        val(r.railService),   // сервисная часть ЖД
+        "Hotel":               val(r.hotel),        // название отеля (если есть)
+        "Rail Service":        val(r.railService),  // сервисная часть для ЖД
 
-        // Деньги
-        "Fare":                val(r.fareValue),     // Тариф
-        "Taxes":               val(r.taxesValue),    // Таксы (число; для ЖД — пусто)
-        "VAT":                 val(r.vat),           // НДС
-        "Total Price":         val(r.stoimost),      // Итоговая стоимость
-        "Supplier Fee":        val(r.sborPostavshchika),
-        "Supplier Commission": val(r.komissiyaPostavshchika),
-        "Currency":            val(r.valyuta),
+        "Fare":                val(r.fare),
+        "Taxes":               val(r.taxes),
+        "VAT":                 val(r.vat),
+        "Total Price":         val(r.totalPrice),
+        "Supplier Fee":        val(r.supplierFee),
+        "Supplier Commission": val(r.supplierCommission),
+        "Currency":            val(r.currency),
 
-        // Прочее
-        "Departure Date":      val(r.dataVyleta),
+        "Departure Date":      val(r.departureDate),
         "EMD":                 val(r.emd),
-        "EMD Category":        val(r.kategoriyaEmd),
-        "Refund Penalty":      val(r.shtrafZaVozvrat),
-        "Carrier Code":        val(r.kodPerevozchika),
+        "EMD Category":        val(r.emdCategory),
+        "Refund Penalty":      val(r.refundPenalty),
+        "Carrier Code":        val(r.carrierCode),
         "Issue Date":          val(r.issueDate),
         "Realization Date":    val(r.realizationDate)
     };
 }
 
 export const Exporter = {
-    /**
-     * Преобразует массив нормализованных строк таблицы в массив JSON-объектов
-     * (по одному объекту на строку).
-     */
+    // Возвращаем массив объектов — по одному на каждую строку таблицы
     toUnifiedJson({ rows }){
         const safeRows = Array.isArray(rows) ? rows : [];
-        const blocks = safeRows.map(mapRowToExport);
-        // Возвращаем именно массив блоков — "каждая строка таблицы отдельным блоком"
-        return blocks;
+        return safeRows.map(mapRowToExport);
     }
 };

@@ -1,7 +1,17 @@
 // client/parsers/xml/myagent_air.js
-// Парсер XML формата МойАгент (авиа). Продажи и возвраты.
-// Тариф, Таксы и Стоимость определяем по атрибутам air_ticket_prod (fare, taxes, service_fee).
-// Стоимость = total/amount_total, иначе fare + taxes.
+// --------------------------------------------------------------
+// ПАРСЕР: «МойАгент» (авиа). Работает для продаж и возвратов.
+// --------------------------------------------------------------
+// Что делает:
+//   • Разбирает XML формата <order_snapshot>.
+//   • Находит авиапродукты <air_ticket_prod> и выписывает по ним
+//     строки для таблицы с ВНУТРЕННИМИ английскими ключами.
+// Важно:
+//   • Стоимость (totalPrice) = total/amount_total, иначе fare + taxes.
+//   • Fare/Taxes берём из атрибутов <air_ticket_prod fare="..." taxes="...">.
+//   • VAT ищем в <air_tax code="VAT|НДС" amount="...">.
+//   • Список такс (taxesList) — просто для UI; в экспорт не идёт.
+// --------------------------------------------------------------
 
 export default {
     supplierCode: 'myagent_air',
@@ -17,15 +27,14 @@ export default {
 
         const root = doc.querySelector('order_snapshot');
         if(!root){
-            // важно: бросаем ошибку, чтобы UI пометил файл красным и показал подсказку
             throw new Error('Файл не похож на формат МойАгент (нет <order_snapshot>).');
         }
 
         // Заголовок заказа
         const header = root.querySelector('header');
-        const orderId   = header?.getAttribute('ord_id') || '';
-        const currency  = header?.getAttribute('currency') || '';
-        const createdAt = header?.getAttribute('time') || '';
+        const orderNumber   = header?.getAttribute('ord_id') || '';
+        const currency      = header?.getAttribute('currency') || '';
+        const dateCreated   = header?.getAttribute('time') || '';
 
         // PNR (берём первый rloc)
         const pnr = root.querySelector('reservations > reservation')?.getAttribute('rloc') || '';
@@ -84,71 +93,69 @@ export default {
             const firstSeg = segs[0] || null;
             const lastSeg  = segs[segs.length-1] || null;
 
-            const origin = prod.getAttribute('origin') || firstSeg?.getAttribute('departure_airport') || '';
-            const dest   = prod.getAttribute('destination') || lastSeg?.getAttribute('arrival_airport') || '';
+            const origin  = prod.getAttribute('origin') || firstSeg?.getAttribute('departure_airport') || '';
+            const destination = prod.getAttribute('destination') || lastSeg?.getAttribute('arrival_airport') || '';
+            const departureDate = firstSeg?.getAttribute('departure_datetime') || '';
 
             // Перевозчик
             const validating = prod.getAttribute('validating_carrier') || '';
             const firstCarrier = firstSeg?.getAttribute('carrier') || '';
             const carrierCode = validating || firstCarrier || '';
 
-            // **** Тариф/Таксы/Стоимость ****
-            const fareAttr   = prod.getAttribute('fare')   || ''; // тариф
-            const taxesAttr  = prod.getAttribute('taxes')  || ''; // таксы (сумма)
-            const serviceFee = prod.getAttribute('service_fee') || '';
+            // Тариф/Таксы/Итог/Валюта/Сбор
+            const fareAttr     = prod.getAttribute('fare') || '';
+            const taxesAttr    = prod.getAttribute('taxes') || '';
+            const totalAttr    = prod.getAttribute('total') || prod.getAttribute('amount_total') || '';
+            const serviceFee   = prod.getAttribute('service_fee') || '';
 
-            const fareValue  = toNum(fareAttr);
-            let taxesValue   = toNum(taxesAttr);
+            const fare = toNum(fareAttr);
+            let taxes  = toNum(taxesAttr);
 
-            // Список такс + VAT; fallback для суммы такс, если @taxes отсутствует
-            const taxes = [];
+            // Список такс + VAT; fallback сумма такс, если @taxes отсутствует
+            const taxesPairs = [];
             let taxesSumFallback = 0;
-            let vatValue = '';
+            let vat = '';
             prod.querySelectorAll('air_tax').forEach(t=>{
                 const code = (t.getAttribute('code') || '').trim();
                 const amountRaw = t.getAttribute('amount') || '';
                 const amount = toNum(amountRaw);
-                if (code) taxes.push(`${code} = ${amountRaw}`);
+                if (code) taxesPairs.push(`${code} = ${amountRaw}`);
                 if (amount !== '') {
                     taxesSumFallback += Number(amount);
-                    if ((code.toUpperCase() === 'VAT' || code.toUpperCase() === 'НДС') && vatValue === '') {
-                        vatValue = Number(amount);
+                    if ((code.toUpperCase() === 'VAT' || code.toUpperCase() === 'НДС') && vat === '') {
+                        vat = Number(amount);
                     }
                 }
             });
-            if (taxesValue === '') {
-                taxesValue = (taxes.length ? taxesSumFallback : '');
+            if (taxes === '') {
+                taxes = (taxesPairs.length ? taxesSumFallback : '');
             }
-            const taxesList = taxes.join('\n');
+            const taxesList = taxesPairs.join('\n');
 
-            // Стоимость
-            const totalAttr  = prod.getAttribute('total') || prod.getAttribute('amount_total') || '';
-            let stoimost = toNum(totalAttr);
-            if (stoimost === '') {
-                const f = fareValue !== '' ? Number(fareValue) : 0;
-                const t = taxesValue !== '' ? Number(taxesValue) : 0;
-                if (fareValue !== '' || taxesValue !== '') stoimost = f + t;
-                else stoimost = '';
+            // Итоговая стоимость: total или fare+taxes
+            let totalPrice = toNum(totalAttr);
+            if (totalPrice === '') {
+                const f = fare !== '' ? Number(fare) : 0;
+                const t = taxes !== '' ? Number(taxes) : 0;
+                if (fare !== '' || taxes !== '') totalPrice = f + t;
+                else totalPrice = '';
             }
-
-            // Дата вылета
-            const firstDepDate = firstSeg?.getAttribute('departure_datetime') || '';
 
             // Документы по prod_id (продажа/возврат/дата/номер)
             const docs = getTicketNumbersByProdId(prodId);
             const hasRefundOper = docs.some(d=> d.oper === 'CANX' || d.oper === 'REF');
-            const operatsiya = hasRefundOper ? 'Возврат' : 'Продажа';
+            const operation = hasRefundOper ? 'Возврат' : 'Продажа';
 
             // Номер билета
-            let ticketNumber = '';
+            let productNumber = '';
             const saleDoc = docs.find(d=> d.oper === 'TKT');
-            if (saleDoc && saleDoc.number) ticketNumber = saleDoc.number;
-            if (!ticketNumber) {
-                ticketNumber = firstSeg?.getAttribute('tkt_number') || '';
+            if (saleDoc && saleDoc.number) productNumber = saleDoc.number;
+            if (!productNumber) {
+                productNumber = firstSeg?.getAttribute('tkt_number') || '';
             }
 
-            // Issue date
-            const issueDate = saleDoc?.date || createdAt;
+            // Дата выписки
+            const issueDate = saleDoc?.date || dateCreated;
 
             // EMD
             let emd = hasEmdForProd(prodId);
@@ -157,8 +164,7 @@ export default {
             }
 
             // Штраф за возврат
-            const hasPenaltyTax = prod.querySelector('air_tax[code="PEN"]') != null;
-            const shtrafZaVozvrat = hasPenaltyTax || hasRefundOper;
+            const refundPenalty = (prod.querySelector('air_tax[code="PEN"]') != null) || hasRefundOper;
 
             // Пассажир
             let paxId = null;
@@ -171,24 +177,30 @@ export default {
             const pax = paxId && paxMap.get(paxId) ? paxMap.get(paxId) : (paxMap.values().next().value || {firstName:'', lastName:''});
 
             rows.push({
-                nomerProdukta: ticketNumber,
-                dataSozdaniya: createdAt,
-                tipProdukta: 'Авиабилет',
-                operatsiya,
-                nomerZakaza: orderId,
+                // Контекст
+                productNumber,
+                dateCreated,
+                productType: 'Авиабилет',
+                operation,
+                orderNumber,
 
-                passazhirFamiliya: pax?.lastName || '',
-                passazhirImya: pax?.firstName || '',
+                // Пассажир / маршрут
+                lastName: pax?.lastName || '',
+                firstName: pax?.firstName || '',
                 pnr,
-                punktOtpravleniya: origin,
-                punktPribytiya: dest,
+                origin,
+                destination,
+                hotel: '',
 
-                stoimost,
-                fareValue,
-                taxesValue,
-                vat: vatValue === '' ? '' : vatValue,
-                sborPostavshchika: serviceFee,
-                komissiyaPostavshchika: (()=>{            // пересчёт, если будет нужно
+                // Деньги
+                totalPrice,
+                fare,
+                taxes,
+                vat: vat === '' ? '' : vat,
+                railService: '',
+
+                supplierFee: serviceFee,
+                supplierCommission: (()=>{            // сумма fee[type="commission"]
                     let commission = 0;
                     prod.querySelectorAll('fees > fee[type="commission"]').forEach(f=>{
                         const a = Number(String(f.getAttribute('amount') || '0').replace(',', '.'));
@@ -196,13 +208,15 @@ export default {
                     });
                     return commission || '';
                 })(),
-                valyuta: currency,
+                currency,
 
-                spisokTaks: taxesList,
-                dataVyleta: firstDepDate,
+                // Прочее
+                taxesList,
+                departureDate,
                 emd,
-                shtrafZaVozvrat,
-                kodPerevozchika: carrierCode,
+                emdCategory: '',
+                refundPenalty,
+                carrierCode,
                 issueDate,
 
                 category: 'air'

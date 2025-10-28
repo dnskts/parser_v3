@@ -1,10 +1,26 @@
 // client/parsers/xml/mom.js
-// Поставщик: МОМ (Gridnine), корень <x:booking ...>
-// Поддержка: air-product, hotel-product, railway-product (продажа/возврат).
+// --------------------------------------------------------------
+// ПАРСЕР: «МОМ» (Gridnine). Поддержка air-product, hotel-product, railway-product.
+// --------------------------------------------------------------
+// Общие правила по полям (внутренние ключи на английском):
+//   • productNumber, dateCreated, productType, operation, orderNumber
+//   • lastName/firstName, pnr, origin, destination, hotel
+//   • totalPrice, fare, taxes, vat, railService
+//   • supplierFee, supplierCommission, currency
+//   • taxesList (только для UI)
+//   • departureDate, emd, emdCategory, refundPenalty, carrierCode, issueDate, realizationDate
 //
-// Обновления:
-//  - HOTEL: город записываем в "Пункт прибытия", "Пункт отправления" пустой.
-//  - HOTEL: добавлена колонка "Отель" — берём название отеля из доступных узлов/атрибутов.
+// Отдельно по типам:
+//   • AIR: fare = equivalentFare@amount || fare@amount
+//          taxes = Σ tax(equivalentAmount/amount), vat — из tax[code=VAT|НДС]
+//          totalPrice = total@amount, иначе fare + taxes
+//   • HOTEL: город пишем в destination; origin пустой; hotel — название отеля.
+//   • RAIL:  "Такс" как понятия нет:
+//          fare = totalEquivalentFare - serviceFare (плацкарта)
+//          railService = serviceFare
+//          taxes = '' (пусто)
+//          vat = totalEquivalentVAT
+// --------------------------------------------------------------
 
 export default {
     supplierCode: 'mom',
@@ -15,11 +31,8 @@ export default {
         const perr = doc.querySelector('parsererror');
         if (perr) throw new Error('Некорректный XML (parsererror).');
 
-        const qn = (nsTag) => {
-            const [, tag] = nsTag.split(':');
-            return doc.getElementsByTagNameNS('*', tag);
-        };
-        const booking = qn('x:booking')[0];
+        const getNs = (tag) => doc.getElementsByTagNameNS('*', tag);
+        const booking = getNs('booking')[0];
         if (!booking) throw new Error('Не найден корневой элемент <x:booking>.');
 
         const attr = (el, name, d='') => el?.getAttribute?.(name) ?? d;
@@ -30,59 +43,31 @@ export default {
         };
         const first = (list)=> list && list.length ? list[0] : null;
 
-        // helpers
-        const getTextish = (el, names=[])=>{
-            // ищем caption/name/title внутри разных вариантов тэгов
-            for (const n of names){
-                const found = el.getElementsByTagNameNS('*', n);
-                if (found && found.length) {
-                    const v = attr(found[0],'caption','') || attr(found[0],'name','') || (found[0].textContent||'').trim();
-                    if (v) return v;
-                }
-            }
-            return '';
-        };
-        const getHotelName = (hp)=>{
-            // эвристики: hotelName, hotel, accommodation, property, hotelInfo
-            const direct = attr(hp,'hotelName','') || attr(hp,'hotel','') || attr(hp,'accommodation','') || '';
-            if (direct) return direct;
-            // попробуем по вложенным узлам
-            const variants = ['hotelName','hotel','accommodation','property','hotelInfo','hotelLocation'];
-            for (const v of variants){
-                const node = first(hp.getElementsByTagNameNS('*', v));
-                if (node){
-                    const name = attr(node,'name','') || attr(node,'caption','') || attr(node,'title','') || (node.textContent||'').trim();
-                    if (name) return name;
-                }
-            }
-            return '';
-        };
-
-        // Глобальные
-        const createdAt   = attr(booking, 'time', '');
-        const orderNumber = attr(booking, 'bookingNumber', '');
+        // Глобальные реквизиты
+        const dateCreated   = attr(booking, 'time', '');
+        const orderNumber   = attr(booking, 'bookingNumber', '');
 
         // PNR (первый)
         let pnr = '';
         {
-            const reservations = booking.getElementsByTagNameNS('*','reservation');
-            pnr = attr(first(reservations), 'pnr', '');
+            const reservation = first(booking.getElementsByTagNameNS('*','reservation'));
+            pnr = attr(reservation, 'pnr', '');
         }
 
-        // Комиссия поставщика (общая)
+        // Общая комиссия поставщика
         let supplierCommission = '';
         {
-            const tvcs = booking.getElementsByTagNameNS('*','totalVendorCommissions');
-            supplierCommission = toNum(attr(first(tvcs), 'amount', ''));
+            const tvc = first(booking.getElementsByTagNameNS('*','totalVendorCommissions'));
+            supplierCommission = toNum(attr(tvc, 'amount', ''));
         }
 
         const rows = [];
 
-        // ====== AIR ======
+        // ========== AIR ==========
         const airProducts = booking.getElementsByTagNameNS('*','air-product');
         for (const ap of airProducts){
             const statusCode = attr(first(ap.getElementsByTagNameNS('*','status')), 'code', 'SELL');
-            const operatsiya = statusCode === 'REFUND' ? 'Возврат' :
+            const operation = statusCode === 'REFUND' ? 'Возврат' :
                 statusCode === 'EXCHANGE' ? 'Обмен' :
                     statusCode === 'VOID' ? 'Войд' : 'Продажа';
 
@@ -100,23 +85,23 @@ export default {
 
             // Сегменты
             const seg = first(first(ap.getElementsByTagNameNS('*','segments'))?.getElementsByTagNameNS('*','segment') || []);
-            const depAirport = attr(seg,'departureLocationCode','') || '';
-            const arrAirport = attr(seg,'arriveLocationCode','') || '';
+            const origin = attr(seg,'departureLocationCode','') || '';
+            const destination = attr(seg,'arriveLocationCode','') || '';
             const departureDate = attr(seg,'departureDate','') || attr(seg,'departureDateTime','') || '';
 
             // Суммы
             const eqFare = first(ap.getElementsByTagNameNS('*','equivalentFare'));
-            const fare   = first(ap.getElementsByTagNameNS('*','fare'));
-            const total  = first(ap.getElementsByTagNameNS('*','total'));
+            const fareNode   = first(ap.getElementsByTagNameNS('*','fare'));
+            const totalNode  = first(ap.getElementsByTagNameNS('*','total'));
 
-            const fareValue = toNum(attr(eqFare || fare, 'amount', ''));
+            const fare = toNum(attr(eqFare || fareNode, 'amount', ''));
             // таксы: суммируем все <tax>
-            let taxesValue = '';
+            let taxes = '';
             let vat = '';
-            const taxes = ap.getElementsByTagNameNS('*','tax');
-            if (taxes.length){
+            const taxesEls = ap.getElementsByTagNameNS('*','tax');
+            if (taxesEls.length){
                 let sum = 0; let seen=false;
-                for (const t of taxes){
+                for (const t of taxesEls){
                     const eq = first(t.getElementsByTagNameNS('*','equivalentAmount'));
                     const amountStr = attr(eq || t, 'amount', '');
                     const n = Number(String(amountStr).replace(',','.'));
@@ -124,25 +109,25 @@ export default {
                     const code = (attr(t,'code','') || '').toUpperCase();
                     if ((code === 'VAT' || code === 'НДС') && vat==='') vat = n;
                 }
-                taxesValue = seen ? sum : '';
+                taxes = seen ? sum : '';
             }
 
-            // stoimost
-            let stoimost = toNum(attr(total,'amount',''));
-            if (stoimost === '') {
-                const f = fareValue !== '' ? Number(fareValue) : 0;
-                const t = taxesValue !== '' ? Number(taxesValue) : 0;
-                if (fareValue !== '' || taxesValue !== '') stoimost = f + t;
-                else stoimost = '';
+            // Итоговая стоимость
+            let totalPrice = toNum(attr(totalNode,'amount',''));
+            if (totalPrice === '') {
+                const f = fare !== '' ? Number(fare) : 0;
+                const t = taxes !== '' ? Number(taxes) : 0;
+                if (fare !== '' || taxes !== '') totalPrice = f + t;
+                else totalPrice = '';
             }
 
             // Валюта
             const currency = attr(ap,'gdsCurrency','') ||
-                attr(total,'currency','') ||
-                attr(eqFare || fare, 'currency','');
+                attr(totalNode,'currency','') ||
+                attr(eqFare || fareNode, 'currency','');
 
             // Сборы
-            let vendorFee = '';
+            let supplierFee = '';
             const vsf = first(ap.getElementsByTagNameNS('*','vendorServiceFee'));
             if (vsf){
                 let sum = 0, seen=false;
@@ -154,89 +139,103 @@ export default {
                     const n = Number(String(a||'').replace(',','.'));
                     if (Number.isFinite(n)){ sum+=n; seen=true; }
                 }
-                vendorFee = seen ? sum : '';
+                supplierFee = seen ? sum : '';
             }
 
-            // Номер продукта / выпуск
-            const ticketNumber = attr(ap,'ticketNumber','') || '';
+            // Номер продукта / выпуск / перевозчик / EMD
+            const productNumber = attr(ap,'ticketNumber','') || '';
             const issueDate = attr(ap, 'issueDate','') || '';
-
-            // Перевозчик
             const carrierCode = attr(ap, 'validatingCarrierCode','') || '';
 
+            let emd = false, emdCategory = '';
+            const catEl = first(ap.getElementsByTagNameNS('*','category'));
+            const catCode = (attr(catEl,'code','') || '').toUpperCase();
+            if (catCode === 'MCO' || catCode === 'EMD') {
+                emd = true;
+                const nom = first(ap.getElementsByTagNameNS('*','nomenclature'));
+                emdCategory = attr(nom,'caption','') || attr(nom,'code','') || 'EMD';
+            }
+
             rows.push({
-                nomerProdukta: ticketNumber,
-                dataSozdaniya: createdAt,
-                tipProdukta: 'Авиабилет',
-                operatsiya,
-                nomerZakaza: orderNumber,
+                productNumber,
+                dateCreated,
+                productType: emd ? 'EMD' : 'Авиабилет',
+                operation,
+                orderNumber,
 
-                passazhirFamiliya: lastName,
-                passazhirImya: firstName,
+                lastName,
+                firstName,
                 pnr,
-                punktOtpravleniya: depAirport,
-                punktPribytiya: arrAirport,
-                hotelName: '',
+                origin,
+                destination,
+                hotel: '',
 
-                stoimost,
-                fareValue,
-                taxesValue,
+                totalPrice,
+                fare,
+                taxes,
                 vat: vat === '' ? '' : Number(vat),
                 railService: '',
 
-                sborPostavshchika: vendorFee,
-                komissiyaPostavshchika: supplierCommission,
-                valyuta: currency,
+                supplierFee,
+                supplierCommission,
+                currency,
 
-                spisokTaks: '',
-                dataVyleta: departureDate,
-                emd: '',
-                kategoriyaEmd: '',
-                shtrafZaVozvrat: operatsiya === 'Возврат',
-                kodPerevozchika: carrierCode,
+                taxesList: '',
+                departureDate,
+                emd,
+                emdCategory,
+                refundPenalty: operation === 'Возврат',
+                carrierCode,
                 issueDate,
 
                 category: 'air'
             });
         }
 
-        // ====== HOTEL ======
+        // ========== HOTEL ==========
         const hotelProducts = booking.getElementsByTagNameNS('*','hotel-product');
         for (const hp of hotelProducts){
             const statusCode = attr(first(hp.getElementsByTagNameNS('*','status')), 'code', 'SELL');
-            const operatsiya = statusCode === 'REFUND' ? 'Возврат' : 'Продажа';
+            const operation = statusCode === 'REFUND' ? 'Возврат' : 'Продажа';
 
             const fareNode  = first(hp.getElementsByTagNameNS('*','fare'));
             const taxNode   = first(hp.getElementsByTagNameNS('*','tax'));
             const totalNode = first(hp.getElementsByTagNameNS('*','total'));
 
-            const fareValue  = toNum(attr(fareNode,  'amount', ''));
-            const taxesValue = toNum(attr(taxNode,   'amount', ''));
-            let stoimost     = toNum(attr(totalNode, 'amount', ''));
+            const fare = toNum(attr(fareNode,  'amount', ''));
+            const taxes = toNum(attr(taxNode,   'amount', ''));
+            let totalPrice = toNum(attr(totalNode, 'amount', ''));
 
-            if (stoimost === '') {
-                const f = fareValue !== '' ? Number(fareValue) : 0;
-                const t = taxesValue !== '' ? Number(taxesValue) : 0;
-                stoimost = (fareValue !== '' || taxesValue !== '') ? (f + t) : '';
+            if (totalPrice === '') {
+                const f = fare !== '' ? Number(fare) : 0;
+                const t = taxes !== '' ? Number(taxes) : 0;
+                totalPrice = (fare !== '' || taxes !== '') ? (f + t) : '';
             }
 
-            const vendorFeeNode = first(hp.getElementsByTagNameNS('*','totalVendorServiceFee'));
-            const sborPostavshchika = toNum(attr(vendorFeeNode,'amount',''));
+            const supplierFee = toNum(attr(first(hp.getElementsByTagNameNS('*','totalVendorServiceFee')),'amount',''));
 
             const currency = attr(hp, 'gdsCurrency', '') ||
                 attr(totalNode, 'currency', '') ||
                 attr(fareNode, 'currency', '') ||
                 attr(taxNode, 'currency', '');
 
-            // Город — пункт прибытия; отправление пусто
+            // Город — в destination, origin пустой
             const hotelLoc = first(hp.getElementsByTagNameNS('*','hotelLocation'));
-            const cityCaption = attr(hotelLoc,'caption','');
+            const destination = attr(hotelLoc,'caption','');
+            const origin = '';
 
-            // Название отеля
-            const hotelName = getHotelName(hp);
-
-            const issueDate = attr(hp, 'issueDate', '');
-            const productNumber = attr(hp, 'systemNumber', '');
+            // Название отеля — пробуем разные места (hotelName, hotel, property, hotelInfo...)
+            let hotel = attr(hp,'hotelName','') || attr(hp,'hotel','') || attr(hp,'accommodation','') || '';
+            if (!hotel) {
+                const tryNodes = ['hotelName','hotel','accommodation','property','hotelInfo','hotelLocation'];
+                for (const n of tryNodes){
+                    const node = first(hp.getElementsByTagNameNS('*', n));
+                    if (node){
+                        hotel = attr(node,'name','') || attr(node,'caption','') || attr(node,'title','') || (node.textContent||'').trim() || '';
+                        if (hotel) break;
+                    }
+                }
+            }
 
             // Пассажир (если есть)
             let lastName = '', firstName = '';
@@ -250,53 +249,56 @@ export default {
                 }
             }
 
+            const issueDate = attr(hp, 'issueDate', '');
+            const productNumber = attr(hp, 'systemNumber', '');
+
             rows.push({
-                nomerProdukta: productNumber,
-                dataSozdaniya: createdAt,
-                tipProdukta: 'Отель',
-                operatsiya,
-                nomerZakaza: orderNumber,
+                productNumber,
+                dateCreated,
+                productType: 'Отель',
+                operation,
+                orderNumber,
 
-                passazhirFamiliya: lastName,
-                passazhirImya: firstName,
+                lastName,
+                firstName,
                 pnr,
-                punktOtpravleniya: '',       // <- пусто
-                punktPribytiya: cityCaption, // <- город сюда
-                hotelName,                   // <- название отеля
+                origin,
+                destination,
+                hotel,
 
-                stoimost,
-                fareValue,
-                taxesValue,
+                totalPrice,
+                fare,
+                taxes,
                 vat: '',
                 railService: '',
 
-                sborPostavshchika,
-                komissiyaPostavshchika: supplierCommission,
-                valyuta: currency,
+                supplierFee,
+                supplierCommission,
+                currency,
 
-                spisokTaks: '',
-                dataVyleta: '',
+                taxesList: '',
+                departureDate: '',
                 emd: '',
-                kategoriyaEmd: '',
-                shtrafZaVozvrat: operatsiya === 'Возврат',
-                kodPerevozchika: '',
+                emdCategory: '',
+                refundPenalty: operation === 'Возврат',
+                carrierCode: '',
                 issueDate,
 
                 category: 'hotel'
             });
         }
 
-        // ====== RAIL ======
+        // ========== RAIL ==========
         const railProducts = booking.getElementsByTagNameNS('*','railway-product');
         for (const rp of railProducts){
             const statusCode = attr(first(rp.getElementsByTagNameNS('*','status')), 'code', 'SELL');
-            const operatsiya = statusCode === 'REFUND' ? 'Возврат' : 'Продажа';
+            const operation = statusCode === 'REFUND' ? 'Возврат' : 'Продажа';
 
             const seg = first(first(rp.getElementsByTagNameNS('*','segments'))?.getElementsByTagNameNS('*','segment') || []);
             const depCity = first(seg?.getElementsByTagNameNS('*','departureCity') || []);
             const arrCity = first(seg?.getElementsByTagNameNS('*','arriveCity') || []);
-            const depCityCap = attr(depCity, 'caption', '') || '';
-            const arrCityCap = attr(arrCity, 'caption', '') || '';
+            const origin = attr(depCity, 'caption', '') || '';
+            const destination = attr(arrCity, 'caption', '') || '';
             const departureDate = attr(seg, 'departureDate', '') || '';
 
             let currency = attr(rp, 'gdsCurrency', '') || '';
@@ -305,11 +307,12 @@ export default {
             const serviceFare = toNum(attr(rp, 'serviceFare', ''));
             const totalEqVAT  = toNum(attr(rp, 'totalEquivalentVAT', ''));
 
-            const fareValue  = (totalEqFare !== '' && serviceFare !== '') ? (Number(totalEqFare) - Number(serviceFare)) : '';
-            const railService = serviceFare;
+            const fare = (totalEqFare !== '' && serviceFare !== '') ? (Number(totalEqFare) - Number(serviceFare)) : ''; // плацкарта
+            const railService = serviceFare;  // сервис ЖД
             const vat = totalEqVAT === '' ? '' : Number(totalEqVAT);
 
-            let stoimost = '';
+            // Итоговая стоимость (с учётом знака при возврате)
+            let totalPrice = '';
             {
                 const fopsRoot = first(rp.getElementsByTagNameNS('*','fops'));
                 const fops = fopsRoot ? fopsRoot.getElementsByTagNameNS('*','fop') : [];
@@ -320,14 +323,14 @@ export default {
                         const amt = toNum(attr(amountNode,'amount',''));
                         const cur = attr(amountNode,'currency','');
                         if (amt !== '') {
-                            stoimost = amt;
+                            totalPrice = amt;
                             if (!currency) currency = cur;
                             break;
                         }
                     }
                 }
-                if (stoimost === '' && totalEqFare !== '') {
-                    stoimost = (operatsiya === 'Возврат') ? -Number(totalEqFare) : Number(totalEqFare);
+                if (totalPrice === '' && totalEqFare !== '') {
+                    totalPrice = (operation === 'Возврат') ? -Number(totalEqFare) : Number(totalEqFare);
                 }
             }
 
@@ -343,43 +346,40 @@ export default {
                 }
             }
 
-            // Перевозчик
-            const carrierNode = first(seg?.getElementsByTagNameNS('*','carrier') || []);
-            const carrierCode = attr(carrierNode,'code','');
-
+            const carrierCode = attr(first(seg?.getElementsByTagNameNS('*','carrier') || []),'code','');
             const issueDate = attr(rp, 'issueDate', '');
             const productNumber = attr(rp, 'systemNumber', '');
 
             rows.push({
-                nomerProdukta: productNumber,
-                dataSozdaniya: createdAt,
-                tipProdukta: 'Ж/Д билет',
-                operatsiya,
-                nomerZakaza: orderNumber,
+                productNumber,
+                dateCreated,
+                productType: 'Ж/Д билет',
+                operation,
+                orderNumber,
 
-                passazhirFamiliya: lastName,
-                passazhirImya: firstName,
+                lastName,
+                firstName,
                 pnr,
-                punktOtpravleniya: depCityCap,
-                punktPribytiya: arrCityCap,
-                hotelName: '',
+                origin,
+                destination,
+                hotel: '',
 
-                stoimost: stoimost === '' ? '' : Number(stoimost),
-                fareValue: fareValue === '' ? '' : Number(fareValue),
-                taxesValue: '',          // ЖД — не используем
+                totalPrice: totalPrice === '' ? '' : Number(totalPrice),
+                fare: fare === '' ? '' : Number(fare),
+                taxes: '', // для ЖД — пусто по договорённости
                 vat,
                 railService: railService === '' ? '' : Number(railService),
 
-                sborPostavshchika: toNum(attr(first(rp.getElementsByTagNameNS('*','totalVendorServiceFee')),'amount','')),
-                komissiyaPostavshchika: supplierCommission,
-                valyuta: currency,
+                supplierFee: toNum(attr(first(rp.getElementsByTagNameNS('*','totalVendorServiceFee')),'amount','')),
+                supplierCommission,
+                currency,
 
-                spisokTaks: '',
-                dataVyleta: departureDate,
+                taxesList: '',
+                departureDate,
                 emd: '',
-                kategoriyaEmd: '',
-                shtrafZaVozvrat: operatsiya === 'Возврат',
-                kodPerevozchika: carrierCode,
+                emdCategory: '',
+                refundPenalty: operation === 'Возврат',
+                carrierCode,
                 issueDate,
 
                 category: 'rail'

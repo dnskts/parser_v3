@@ -1,21 +1,33 @@
 // public/modules/schema.js
-// Единая схема таблицы данных.
-// Новое поле: "Отель" (hotelName), тип string.
+// --------------------------------------------------------------
+// ЕДИНАЯ СХЕМА ДАННЫХ ДЛЯ ТАБЛИЦЫ
+// --------------------------------------------------------------
+// Зачем нужна схема:
+// 1) Описывает список столбцов (ключ = внутреннее имя поля на английском).
+// 2) Хранит русские заголовки для отображения в интерфейсе.
+// 3) Приводит типы данных к нужному формату (число, дата, булево).
+//
+// ВАЖНО: Теперь ВСЕ внутренние ключи — на корректном английском,
+// согласованы с экспортом JSON. Это упростит поддержку и интеграции.
+// --------------------------------------------------------------
 
 function toNumber(val) {
+    // Преобразуем значение к числу. Если не получилось — возвращаем пустую строку.
     if (val === null || val === undefined || val === '') return '';
     const s = String(val).trim().replace(/\s+/g, '').replace(',', '.');
     const n = Number(s);
     return Number.isFinite(n) ? n : '';
 }
 function toBoolean(val) {
+    // Преобразуем к true/false. Если распознать не удалось — пустая строка.
     if (val === null || val === undefined || val === '') return '';
     const s = String(val).trim().toLowerCase();
-    if (['true','1','y','yes','да','д','истина','istina'].includes(s)) return true;
-    if (['false','0','n','no','нет','н','ложь','lozh'].includes(s)) return false;
+    if (['true','1','y','yes','да','д','истина'].includes(s)) return true;
+    if (['false','0','n','no','нет','н','ложь'].includes(s)) return false;
     return '';
 }
 function toIsoDate(val) {
+    // Преобразуем к формату "YYYY-MM-DD HH:mm:ss" для единообразия.
     if (val === null || val === undefined || val === '') return '';
     const s = String(val).trim();
     const dmY = /^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/;
@@ -39,49 +51,63 @@ function toIsoDate(val) {
 }
 
 export const Schema = {
+    // ------------------------------------------------------------
+    // Описание колонок:
+    // key   — внутренний ключ поля (английский, используется во всех скриптах)
+    // title — заголовок, который видит пользователь в таблице (русский)
+    // type  — тип данных (number/date/boolean/string)
+    // ------------------------------------------------------------
     _columns: [
-        { key: 'nomerProdukta',          title: 'Номер продукта',        type: 'string'  },
-        { key: 'dataSozdaniya',          title: 'Дата создания',         type: 'date'    },
-        { key: 'tipProdukta',            title: 'Тип продукта',          type: 'string'  },
-        { key: 'operatsiya',             title: 'Операция',              type: 'string'  },
-        { key: 'nomerZakaza',            title: 'Номер заказа',          type: 'string'  },
-        { key: 'passazhirFamiliya',      title: 'Пассажир Фамилия',      type: 'string'  },
-        { key: 'passazhirImya',          title: 'Пассажир Имя',          type: 'string'  },
-        { key: 'pnr',                    title: 'PNR',                   type: 'string'  },
-        { key: 'punktOtpravleniya',      title: 'Пункт отправления',     type: 'string'  },
-        { key: 'punktPribytiya',         title: 'Пункт прибытия',        type: 'string'  },
-        { key: 'hotelName',              title: 'Отель',                 type: 'string'  }, // NEW
+        { key: 'productNumber',       title: 'Номер продукта',        type: 'string'  },
+        { key: 'dateCreated',         title: 'Дата создания',         type: 'date'    },
+        { key: 'productType',         title: 'Тип продукта',          type: 'string'  },
+        { key: 'operation',           title: 'Операция',              type: 'string'  },
+        { key: 'orderNumber',         title: 'Номер заказа',          type: 'string'  },
 
-        // Денежные
-        { key: 'stoimost',               title: 'Стоимость',             type: 'number'  },
-        { key: 'fareValue',              title: 'Тариф',                 type: 'number'  }, // экспорт: Fare
-        { key: 'taxesValue',             title: 'Таксы',                 type: 'number'  }, // экспорт: Taxes
-        { key: 'vat',                    title: 'Vat',                   type: 'number'  }, // экспорт: VAT
-        { key: 'railService',            title: 'Сервис ЖД',             type: 'number'  },
+        { key: 'lastName',            title: 'Пассажир Фамилия',      type: 'string'  },
+        { key: 'firstName',           title: 'Пассажир Имя',          type: 'string'  },
+        { key: 'pnr',                 title: 'PNR',                   type: 'string'  },
+        { key: 'origin',              title: 'Пункт отправления',     type: 'string'  },
+        { key: 'destination',         title: 'Пункт прибытия',        type: 'string'  },
+        { key: 'hotel',               title: 'Отель',                 type: 'string'  }, // название отеля
 
-        { key: 'sborPostavshchika',      title: 'Сбор поставщика',       type: 'number'  },
-        { key: 'komissiyaPostavshchika', title: 'Комиссия поставщика',   type: 'number'  },
-        { key: 'valyuta',                title: 'Валюта',                type: 'string'  },
-        { key: 'spisokTaks',             title: 'Список такс',           type: 'string'  },
+        // Денежные значения
+        { key: 'totalPrice',          title: 'Стоимость',             type: 'number'  },
+        { key: 'fare',                title: 'Тариф',                 type: 'number'  },
+        { key: 'taxes',               title: 'Таксы',                 type: 'number'  },
+        { key: 'vat',                 title: 'Vat',                   type: 'number'  },
+        { key: 'railService',         title: 'Сервис ЖД',             type: 'number'  },
 
-        { key: 'dataVyleta',             title: 'Дата вылета',           type: 'date'    },
-        { key: 'emd',                    title: 'EMD?',                  type: 'boolean' },
-        { key: 'kategoriyaEmd',          title: 'Категория EMD',         type: 'string'  },
-        { key: 'shtrafZaVozvrat',        title: 'Штраф за возврат?',     type: 'boolean' },
-        { key: 'kodPerevozchika',        title: 'Код перевозчика',       type: 'string'  },
-        { key: 'issueDate',              title: 'Дата выписки',          type: 'date'    },
-        { key: 'realizationDate',        title: 'Дата реализации',       type: 'date'    }
+        { key: 'supplierFee',         title: 'Сбор поставщика',       type: 'number'  },
+        { key: 'supplierCommission',  title: 'Комиссия поставщика',   type: 'number'  },
+        { key: 'currency',            title: 'Валюта',                type: 'string'  },
+
+        // Дополнительно храним «Список такс» для наглядности в UI (в экспорт не идёт)
+        { key: 'taxesList',           title: 'Список такс',           type: 'string'  },
+
+        { key: 'departureDate',       title: 'Дата вылета',           type: 'date'    },
+        { key: 'emd',                 title: 'EMD?',                  type: 'boolean' },
+        { key: 'emdCategory',         title: 'Категория EMD',         type: 'string'  },
+        { key: 'refundPenalty',       title: 'Штраф за возврат?',     type: 'boolean' },
+        { key: 'carrierCode',         title: 'Код перевозчика',       type: 'string'  },
+        { key: 'issueDate',           title: 'Дата выписки',          type: 'date'    },
+        { key: 'realizationDate',     title: 'Дата реализации',       type: 'date'    },
+
+        // Служебное поле для логики (не показываем в таблице, но оставляем, если нужно)
+        // { key: 'category',         title: '(Категория)',           type: 'string'  },
     ],
 
     getColumns(){ return this._columns; },
 
+    // Приведение типов + авто-расчёт «Дата реализации»
     normalizeRows(rows){
         const cols = this._columns;
         return (rows || []).map((raw)=>{
             const out = {};
+            // Заполняем все поля по списку колонок, даже если их ещё нет в данных
             for (const col of cols) out[col.key] = raw[col.key] ?? '';
 
-            // Приведение типов
+            // Приведение типов согласно схеме
             for (const col of cols) {
                 const v = out[col.key];
                 switch (col.type) {
@@ -92,11 +118,12 @@ export const Schema = {
                 }
             }
 
-            // Правило "Дата реализации"
+            // Бизнес-правило: "Дата реализации"
+            // Для air/rail = Issue Date, для hotel = (если есть Check-Out) иначе Issue Date.
             out.realizationDate = this.computeRealizationDate({
                 category: raw.category || '',
                 issueDate: out.issueDate,
-                checkOutDate: out.checkOutDate || ''
+                checkOutDate: out.checkOutDate || '' // поле может прийти из парсера отелей (если добавим)
             });
 
             return out;
