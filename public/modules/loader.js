@@ -1,46 +1,32 @@
 // public/modules/loader.js
-// Отвечает за загрузку входных данных. Теперь поддерживает множественную загрузку:
-// - input[type=file multiple]
-// - drag&drop нескольких файлов
-//
-// Колбэк onFileContent вызывается ДЛЯ КАЖДОГО файла: onFileContent(content, fileName)
+// Загрузка входных данных: только через input[type=file multiple].
+// Вызывает onBatchStart(files) один раз перед пачкой и onFileContent(content, fileName) для каждого файла.
 
-export function initLoader({ fileInputEl, dropZoneEl, onFileContent }){
-    // Загрузка через input (несколько файлов)
+export function initLoader({ fileInputEl, onFileContent, onBatchStart }){
     fileInputEl.addEventListener('change', async (e)=>{
         const files = Array.from(e.target.files || []);
-        await _handleFiles(files, onFileContent);
-        fileInputEl.value = ''; // очищаем для повторной загрузки тех же файлов
-    });
+        if (!files.length) return;
 
-    // Drag & Drop (несколько файлов)
-    ;['dragenter','dragover'].forEach(evtName=>{
-        dropZoneEl.addEventListener(evtName, (e)=>{
-            e.preventDefault(); e.stopPropagation();
-            dropZoneEl.classList.add('dragover');
-        });
-    });
-    ;['dragleave','drop'].forEach(evtName=>{
-        dropZoneEl.addEventListener(evtName, (e)=>{
-            e.preventDefault(); e.stopPropagation();
-            dropZoneEl.classList.remove('dragover');
-        });
-    });
-    dropZoneEl.addEventListener('drop', async (e)=>{
-        const files = Array.from(e.dataTransfer.files || []);
-        await _handleFiles(files, onFileContent);
+        // Сообщаем приложению, что начинается новая пачка — оно очистит таблицу/состояние
+        if (typeof onBatchStart === 'function') {
+            try { await onBatchStart(files); } catch {}
+        }
+
+        for (const file of files) {
+            try{
+                const text = await readFileAsText(file);
+                await onFileContent(text, file.name);
+            }catch{
+                alert(`Ошибка чтения файла: ${file.name}`);
+            }
+        }
+
+        // очищаем input, чтобы можно было выбрать те же файлы снова
+        fileInputEl.value = '';
     });
 }
 
-async function _handleFiles(files, onFileContent){
-    // фильтр по расширению .xml (мягко: если нет — всё равно попытаемся прочитать)
-    for (const file of files) {
-        await _readFile(file).then(text => onFileContent(text, file.name))
-            .catch(()=> alert(`Ошибка чтения файла: ${file.name}`));
-    }
-}
-
-function _readFile(file){
+function readFileAsText(file){
     return new Promise((resolve, reject)=>{
         const reader = new FileReader();
         reader.onload = ()=> resolve(String(reader.result));

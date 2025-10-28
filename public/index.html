@@ -7,34 +7,28 @@
     <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-<header class="bx-header">
-    <h1>Universal Supplier Parser</h1>
+<header class="bx-header bx-header--compact">
     <div class="bx-actions">
-        <!-- Кнопка выбора файлов (ТЕПЕРЬ multiple) -->
-        <label class="bx-button">
+        <!-- Кнопка выбора файлов (multiple), менее яркая и компактная -->
+        <label class="bx-button bx-button--muted bx-button--sm">
             Загрузить XML
             <input type="file" id="fileInput" accept=".xml" multiple hidden />
         </label>
 
         <!-- Экспорт текущей таблицы в JSON -->
-        <button id="exportJsonBtn" class="bx-button bx-secondary">Экспорт в JSON</button>
+        <button id="exportJsonBtn" class="bx-button bx-button--muted bx-button--sm">Экспорт в JSON</button>
     </div>
 </header>
 
 <main class="container">
-    <!-- Зона drag&drop -->
-    <div id="dropZone" class="dropzone">
-        Перетащите один или несколько XML-файлов сюда или используйте кнопку «Загрузить XML»
-    </div>
-
     <!-- Панель статуса -->
     <div id="status" class="status"></div>
 
-    <!-- Полоска с парсером и именем файла -->
+    <!-- Полоска с парсером и списком файлов -->
     <div id="sourceBar" class="source-bar">
         <span class="muted">Парсер:</span>
         <span id="sourceName" class="source-name">—</span>
-        <span class="muted" style="margin-left:12px;">Файл:</span>
+        <span class="muted" style="margin-left:12px;">Файлы:</span>
         <span id="fileName" class="source-name">—</span>
     </div>
 
@@ -46,10 +40,6 @@
         </table>
     </div>
 </main>
-
-<footer class="bx-footer">
-    <small>Готово к расширению: XML сегодня, API и автозагрузка (FTP) завтра.</small>
-</footer>
 
 <!-- Важно: используем ES-модули -->
 <script type="module" src="./app.js"></script>

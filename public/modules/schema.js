@@ -1,20 +1,12 @@
 // public/modules/schema.js
-// Единая схема полей на основе файла «поля б24 услуги.xlsx».
-// Каждый столбец имеет: key (внутренний ключ, camelCase), title (заголовок по-русски), type.
-// Допустимые типы: 'string' | 'integer' | 'number' | 'date' | 'boolean'.
-//
-// Важно:
-// - Нормализация автоматически приводит boolean/number/date к единообразию.
-// - "Дата реализации": для air/rail = "Дата выписки"; для hotel = "Дата выезда" (если есть, иначе дата выписки).
+// Единая схема полей таблицы. Добавлено поле "Категория EMD".
 
 function toNumber(val) {
     if (val === null || val === undefined || val === '') return '';
-    // допускаем пробелы и запятые как разделители
     const s = String(val).trim().replace(/\s+/g, '').replace(',', '.');
     const n = Number(s);
     return Number.isFinite(n) ? n : '';
 }
-
 function toBoolean(val) {
     if (val === null || val === undefined || val === '') return '';
     const s = String(val).trim().toLowerCase();
@@ -22,12 +14,9 @@ function toBoolean(val) {
     if (['false','0','n','no','нет','н','ложь'].includes(s)) return false;
     return '';
 }
-
 function toIsoDate(val) {
     if (val === null || val === undefined || val === '') return '';
-    // Пытаемся распознать дату в распространённых форматах, включая "дд.мм.гггг", "гггг-мм-дд", с/без времени
     const s = String(val).trim();
-    // Заменим русские точки на дефисы для Date.parse; отдельно попробуем dd.mm.yyyy hh:mm:ss
     const dmY = /^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/;
     const yMd = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/;
 
@@ -56,14 +45,11 @@ function toIsoDate(val) {
     }
 
     if (!d || isNaN(d.getTime())) return '';
-    // Возвращаем ISO-строку без таймзоны (локальная дата/время), чтобы не «прыгал» часовой пояс
     const pad = n => String(n).padStart(2, '0');
-    const iso = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-    return iso;
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 export const Schema = {
-    // Колонки и их типы (строго по вашему Excel)
     _columns: [
         { key: 'nomerProdukta',        title: 'Номер продукта',        type: 'string'  },
         { key: 'dataSozdaniya',        title: 'Дата создания',         type: 'date'    },
@@ -79,28 +65,26 @@ export const Schema = {
         { key: 'sborPostavshchika',    title: 'Сбор поставщика',       type: 'number'  },
         { key: 'komissiyaPostavshchika', title: 'Комиссия поставщика', type: 'number'  },
         { key: 'valyuta',              title: 'Валюта',                type: 'string'  },
-        { key: 'spisokTaks',           title: 'Список такс',           type: 'string'  }, // при желании можно позже распарсить в структуру
+        { key: 'spisokTaks',           title: 'Список такс',           type: 'string'  },
         { key: 'dataVyleta',           title: 'Дата вылета',           type: 'date'    },
         { key: 'emd',                  title: 'EMD?',                  type: 'boolean' },
+        { key: 'kategoriyaEmd',        title: 'Категория EMD',         type: 'string'  }, /* НОВОЕ */
         { key: 'shtrafZaVozvrat',      title: 'Штраф за возврат?',     type: 'boolean' },
         { key: 'kodPerevozchika',      title: 'Код перевозчика',       type: 'string'  },
         { key: 'issueDate',            title: 'Дата выписки',          type: 'date'    },
         { key: 'realizationDate',      title: 'Дата реализации',       type: 'date'    }
     ],
 
-    // Получить список колонок
     getColumns(){ return this._columns; },
 
-    // Нормализация и приведение типов
     normalizeRows(rows){
         const cols = this._columns;
         return (rows || []).map((raw)=>{
             const out = {};
-            // 1) Скопируем значения по ключам, даже если парсер не все вернул
             for (const col of cols) {
                 out[col.key] = raw[col.key] ?? '';
             }
-            // 2) Приведение типов
+            // Приведение типов
             for (const col of cols) {
                 const v = out[col.key];
                 switch (col.type) {
@@ -115,31 +99,23 @@ export const Schema = {
                         out[col.key] = toIsoDate(v);
                         break;
                     default:
-                        // string — оставляем как есть
                         out[col.key] = (v === null || v === undefined) ? '' : String(v);
                 }
             }
-            // 3) Автовычисление Даты реализации по правилам домена
+            // Автовычисление даты реализации
             out.realizationDate = this.computeRealizationDate({
-                category: raw.category || '',              // категория (air/rail/hotel/transfer) парсер пусть присылает отдельно
-                issueDate: out.issueDate,                  // уже приведённая дата
-                checkOutDate: out.checkOutDate || ''      // если появится поле «Дата выезда» — учтём
+                category: raw.category || '',
+                issueDate: out.issueDate,
+                checkOutDate: out.checkOutDate || ''
             });
             return out;
         });
     },
 
-    // Бизнес-правило по "Дате реализации"
     computeRealizationDate(row){
         const cat = String(row.category || '').toLowerCase();
-        if (cat === 'air' || cat === 'rail') {
-            return row.issueDate || '';
-        }
-        if (cat === 'hotel') {
-            // в данной схеме поля checkOutDate нет; если добавим — учтётся здесь
-            return row.checkOutDate || row.issueDate || '';
-        }
-        // transfer / прочее
+        if (cat === 'air' || cat === 'rail') return row.issueDate || '';
+        if (cat === 'hotel') return row.checkOutDate || row.issueDate || '';
         return row.issueDate || '';
     }
 };
