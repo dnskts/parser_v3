@@ -1,29 +1,24 @@
 // public/app.js
-// Точка входа приложения.
-
 import { initLoader } from './modules/loader.js';
 import { ParserRegistry } from './modules/parser-registry.js';
 import { Schema } from './modules/schema.js';
 import { Table } from './modules/table.js';
 import { Exporter } from './modules/exporter.js';
 
-// Глобальное состояние
 const AppState = {
-    unifiedRows: [],     // все строки текущей сессии (после очистки — заново)
-    rawPayloads: [],     // исходные XML текущей сессии
-    lastCategory: null,  // категория последнего файла
-    sourceName: '—',     // название последнего парсера
-    fileNames: []        // имена всех обработанных файлов текущей сессии
+    unifiedRows: [],
+    rawPayloads: [],
+    lastCategory: null,
+    sourceName: '—',
+    fileNames: []
 };
 
-// Таблица
 const table = new Table({
     headEl: document.getElementById('tableHead'),
     bodyEl: document.getElementById('tableBody'),
     columns: Schema.getColumns()
 });
 
-// UI helpers
 function setStatus(msg, type = 'info'){
     const el = document.getElementById('status');
     el.textContent = msg;
@@ -40,35 +35,26 @@ function setFileNames(){
     if (el) el.textContent = list;
 }
 
-// Начальные значения
+// стартовые значения
 setSourceName('—');
 setFileNames();
 
-// Инициализация загрузчика
+// Инициализация загрузчика (с onBatchStart — очистка)
 initLoader({
     fileInputEl: document.getElementById('fileInput'),
-
-    // ОЧИСТКА перед новой пачкой файлов
     onBatchStart: async (files) => {
-        // Сброс состояния
         AppState.unifiedRows = [];
         AppState.rawPayloads = [];
         AppState.lastCategory = null;
         AppState.sourceName = '—';
         AppState.fileNames = [];
-
-        // Обновляем UI
-        table.setRows([]);          // очистить таблицу
+        table.setRows([]);
         setSourceName('—');
         setFileNames();
         setStatus(`Очищено. Загружаем файлов: ${files.length}…`);
     },
-
-    // Обработка каждого файла
     onFileContent: async (content, fileName) => {
         setStatus(`Файл «${fileName}» загружен. Анализируем...`);
-
-        // Запись имени файла (без дублей)
         if (!AppState.fileNames.includes(fileName)) {
             AppState.fileNames.push(fileName);
             setFileNames();
@@ -110,15 +96,15 @@ initLoader({
     }
 });
 
-// Экспорт JSON (поддержка смешанных категорий)
+// Экспорт JSON — ТОЛЬКО поля главной таблицы
 document.getElementById('exportJsonBtn').addEventListener('click', ()=>{
     if(!AppState.unifiedRows?.length){
         setStatus('Нет данных для экспорта. Сначала загрузите XML-файлы.', 'error');
         return;
     }
     const json = Exporter.toUnifiedJson({
-        rows: AppState.unifiedRows,
-        rawPayload: AppState.rawPayloads[AppState.rawPayloads.length - 1] || null
+        rows: AppState.unifiedRows
+        // rawPayload больше не передаём и не сохраняем
     });
 
     const blob = new Blob([JSON.stringify(json, null, 2)], {type: 'application/json;charset=utf-8'});
