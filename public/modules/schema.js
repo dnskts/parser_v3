@@ -1,5 +1,6 @@
 // public/modules/schema.js
-// Единая схема полей таблицы. Добавлено поле "Категория EMD".
+// Единая схема полей таблицы.
+// ДОБАВЛЕНО: "Стоимость" (stoimost, number)
 
 function toNumber(val) {
     if (val === null || val === undefined || val === '') return '';
@@ -10,8 +11,8 @@ function toNumber(val) {
 function toBoolean(val) {
     if (val === null || val === undefined || val === '') return '';
     const s = String(val).trim().toLowerCase();
-    if (['true','1','y','yes','да','д','истина'].includes(s)) return true;
-    if (['false','0','n','no','нет','н','ложь'].includes(s)) return false;
+    if (['true','1','y','yes','да','д','истина','istina'].includes(s)) return true;
+    if (['false','0','n','no','нет','н','ложь','lozh'].includes(s)) return false;
     return '';
 }
 function toIsoDate(val) {
@@ -23,22 +24,10 @@ function toIsoDate(val) {
     let d;
     if (dmY.test(s)) {
         const m = s.match(dmY);
-        const dd = Number(m[1]);
-        const MM = Number(m[2]);
-        const yyyy = Number(m[3]);
-        const hh = Number(m[4] || 0);
-        const mm = Number(m[5] || 0);
-        const ss = Number(m[6] || 0);
-        d = new Date(yyyy, MM - 1, dd, hh, mm, ss);
+        d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), Number(m[4] || 0), Number(m[5] || 0), Number(m[6] || 0));
     } else if (yMd.test(s)) {
         const m = s.match(yMd);
-        const yyyy = Number(m[1]);
-        const MM = Number(m[2]);
-        const dd = Number(m[3]);
-        const hh = Number(m[4] || 0);
-        const mm = Number(m[5] || 0);
-        const ss = Number(m[6] || 0);
-        d = new Date(yyyy, MM - 1, dd, hh, mm, ss);
+        d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] || 0), Number(m[5] || 0), Number(m[6] || 0));
     } else {
         const t = Date.parse(s);
         if (Number.isFinite(t)) d = new Date(t);
@@ -61,14 +50,21 @@ export const Schema = {
         { key: 'pnr',                  title: 'PNR',                   type: 'string'  },
         { key: 'punktOtpravleniya',    title: 'Пункт отправления',     type: 'string'  },
         { key: 'punktPribytiya',       title: 'Пункт прибытия',        type: 'string'  },
-        { key: 'stoimost',             title: 'Стоимость',             type: 'number'  },
+
+        /* Денежные поля */
+        { key: 'stoimost',             title: 'Стоимость',             type: 'number'  }, // ИТОГО/total
+        { key: 'fareValue',            title: 'Тариф',                 type: 'number'  }, // Fare
+        { key: 'taxesValue',           title: 'Таксы',                 type: 'number'  }, // сумма всех такс (вкл. НДС)
+        { key: 'vat',                  title: 'Vat',                   type: 'number'  }, // НДС
+
         { key: 'sborPostavshchika',    title: 'Сбор поставщика',       type: 'number'  },
         { key: 'komissiyaPostavshchika', title: 'Комиссия поставщика', type: 'number'  },
         { key: 'valyuta',              title: 'Валюта',                type: 'string'  },
         { key: 'spisokTaks',           title: 'Список такс',           type: 'string'  },
+
         { key: 'dataVyleta',           title: 'Дата вылета',           type: 'date'    },
         { key: 'emd',                  title: 'EMD?',                  type: 'boolean' },
-        { key: 'kategoriyaEmd',        title: 'Категория EMD',         type: 'string'  }, /* НОВОЕ */
+        { key: 'kategoriyaEmd',        title: 'Категория EMD',         type: 'string'  },
         { key: 'shtrafZaVozvrat',      title: 'Штраф за возврат?',     type: 'boolean' },
         { key: 'kodPerevozchika',      title: 'Код перевозчика',       type: 'string'  },
         { key: 'issueDate',            title: 'Дата выписки',          type: 'date'    },
@@ -81,28 +77,19 @@ export const Schema = {
         const cols = this._columns;
         return (rows || []).map((raw)=>{
             const out = {};
-            for (const col of cols) {
-                out[col.key] = raw[col.key] ?? '';
-            }
+            for (const col of cols) out[col.key] = raw[col.key] ?? '';
+
             // Приведение типов
             for (const col of cols) {
                 const v = out[col.key];
                 switch (col.type) {
-                    case 'number':
-                    case 'integer':
-                        out[col.key] = toNumber(v);
-                        break;
-                    case 'boolean':
-                        out[col.key] = toBoolean(v);
-                        break;
-                    case 'date':
-                        out[col.key] = toIsoDate(v);
-                        break;
-                    default:
-                        out[col.key] = (v === null || v === undefined) ? '' : String(v);
+                    case 'number': case 'integer': out[col.key] = toNumber(v); break;
+                    case 'boolean': out[col.key] = toBoolean(v); break;
+                    case 'date': out[col.key] = toIsoDate(v); break;
+                    default: out[col.key] = (v === null || v === undefined) ? '' : String(v);
                 }
             }
-            // Автовычисление даты реализации
+            // Дата реализации по правилу
             out.realizationDate = this.computeRealizationDate({
                 category: raw.category || '',
                 issueDate: out.issueDate,

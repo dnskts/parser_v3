@@ -9,30 +9,25 @@
 <body>
 <header class="bx-header bx-header--compact">
     <div class="bx-actions">
-        <!-- Кнопка выбора файлов (multiple), менее яркая и компактная -->
         <label class="bx-button bx-button--muted bx-button--sm">
             Загрузить XML
             <input type="file" id="fileInput" accept=".xml" multiple hidden />
         </label>
-
-        <!-- Экспорт текущей таблицы в JSON -->
         <button id="exportJsonBtn" class="bx-button bx-button--muted bx-button--sm">Экспорт в JSON</button>
     </div>
 </header>
 
 <main class="container">
-    <!-- Панель статуса -->
     <div id="status" class="status"></div>
 
-    <!-- Полоска с парсером и списком файлов -->
     <div id="sourceBar" class="source-bar">
         <span class="muted">Парсер:</span>
         <span id="sourceName" class="source-name">—</span>
         <span class="muted" style="margin-left:12px;">Файлы:</span>
-        <span id="fileName" class="source-name">—</span>
+        <!-- заменили простой текст на контейнер для цветных бейджей -->
+        <span id="fileList" class="file-list"></span>
     </div>
 
-    <!-- Таблица -->
     <div id="tableWrapper" class="table-wrapper">
         <table id="dataTable" class="bx-table">
             <thead id="tableHead"></thead>
@@ -41,7 +36,6 @@
     </div>
 </main>
 
-<!-- Важно: используем ES-модули -->
 <script type="module" src="./app.js"></script>
 </body>
 </html>

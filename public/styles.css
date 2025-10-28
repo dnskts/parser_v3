@@ -20,7 +20,7 @@
     --status-refund-bg: #ffebee;
     --status-refund-fg: #c62828;
     --status-void-bg: #ffebee;
-    --status-void-fg: #c62828;
+    --status-void-fg: #8704d6;
     --status-exchange-bg: #fff8e1;
     --status-exchange-fg: #f9a825;
 }
@@ -81,7 +81,7 @@ body{
     font-size: 12px;
 }
 
-/* Информация о парсере и файлах */
+/* Панель источника/файлов */
 .source-bar{
     display: flex;
     align-items: baseline;
@@ -94,6 +94,39 @@ body{
 .source-bar .source-name{
     color: var(--bx-text);
     font-weight: 600;
+}
+
+/* Бейджи файлов со статусом */
+.file-list {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-left: 6px;
+}
+.file-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--bx-border);
+    background: #f3f6fb;
+    color: #334155;
+    font-size: 11px;
+    line-height: 1.5;
+    cursor: default;
+    max-width: 320px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.file-tag.success {
+    background: #e8f5e9;            /* зелёный фон */
+    color: #2e7d32;                 /* зелёный текст */
+    border-color: #c8e6c9;
+}
+.file-tag.error {
+    background: #ffebee;            /* красный фон */
+    color: #c62828;                 /* красный текст */
+    border-color: #ffcdd2;
 }
 
 /* Таблица */
