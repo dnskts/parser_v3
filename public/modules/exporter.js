@@ -1,75 +1,60 @@
 // public/modules/exporter.js
-// Экспорт: каждая строка таблицы -> отдельный блок { "<category>": [ record ] }.
-// Поля — только из главной таблицы, включая новые: Fare, Taxes, VAT.
+// Экспорт данных из единой таблицы в JSON.
+// ВАЖНО: Экспортируем только согласованный набор полей (по вашим требованиям).
+// Добавлено: "Hotel" (название отеля) и "Rail Service" (сервис ЖД).
 
-function toNumberOrEmpty(v){
-    if (v === null || v === undefined || v === '') return '';
-    const n = Number(String(v).replace(/\s+/g,'').replace(',', '.'));
-    return Number.isFinite(n) ? n : '';
-}
+function mapRowToExport(r){
+    // Безопасная нормализация: undefined/null -> пустая строка
+    const val = (x) => (x === undefined || x === null ? '' : x);
 
-// Карта: ключи нашей схемы -> имена в выгрузке
-const FIELD_MAP = {
-    nomerProdukta:          'Product Number',
-    dataSozdaniya:          'Date Created',
-    tipProdukta:            'Product Type',
-    operatsiya:             'Operation',
-    nomerZakaza:            'Order Number',
-    passazhirFamiliya:      'Last Name',
-    passazhirImya:          'First Name',
-    pnr:                    'PNR',
-    punktOtpravleniya:      'Origin',
-    punktPribytiya:         'Destination',
+    return {
+        // Идентификаторы / контекст
+        "Product Number":      val(r.nomerProdukta),
+        "Date Created":        val(r.dataSozdaniya),
+        "Product Type":        val(r.tipProdukta),
+        "Operation":           val(r.operatsiya),
+        "Order Number":        val(r.nomerZakaza),
 
-    // НОВОЕ: тариф/таксы/VAT
-    fareValue:              'Fare',
-    taxesValue:             'Taxes',
-    vat:                    'VAT',
+        // Пассажир / бронирование / маршрут
+        "Last Name":           val(r.passazhirFamiliya),
+        "First Name":          val(r.passazhirImya),
+        "PNR":                 val(r.pnr),
+        "Origin":              val(r.punktOtpravleniya),
+        "Destination":         val(r.punktPribytiya),
 
-    sborPostavshchika:      'Supplier Fee',
-    komissiyaPostavshchika: 'Supplier Commission',
-    valyuta:                'Currency',
-    spisokTaks:             'Taxes List',    // текстовый список такс, если нужен
-    dataVyleta:             'Departure Date',
-    emd:                    'EMD',
-    kategoriyaEmd:          'EMD Category',
-    shtrafZaVozvrat:        'Refund Penalty',
-    kodPerevozchika:        'Carrier Code',
-    issueDate:              'Issue Date',
-    realizationDate:        'Realization Date'
-};
+        // Новые поля
+        "Hotel":               val(r.hotelName),     // название отеля (для hotel-product)
+        "Rail Service":        val(r.railService),   // сервисная часть ЖД
 
-// Сборка одной записи экспорта
-function buildExportRecord(row){
-    const out = {};
-    for (const [srcKey, dstKey] of Object.entries(FIELD_MAP)) {
-        out[dstKey] = row[srcKey] ?? '';
-    }
-    // приведение числовых для Fare/Taxes/VAT
-    out['Fare'] = toNumberOrEmpty(out['Fare']);
-    out['Taxes'] = toNumberOrEmpty(out['Taxes']);
-    out['VAT'] = toNumberOrEmpty(out['VAT']);
-    return out;
+        // Деньги
+        "Fare":                val(r.fareValue),     // Тариф
+        "Taxes":               val(r.taxesValue),    // Таксы (число; для ЖД — пусто)
+        "VAT":                 val(r.vat),           // НДС
+        "Total Price":         val(r.stoimost),      // Итоговая стоимость
+        "Supplier Fee":        val(r.sborPostavshchika),
+        "Supplier Commission": val(r.komissiyaPostavshchika),
+        "Currency":            val(r.valyuta),
+
+        // Прочее
+        "Departure Date":      val(r.dataVyleta),
+        "EMD":                 val(r.emd),
+        "EMD Category":        val(r.kategoriyaEmd),
+        "Refund Penalty":      val(r.shtrafZaVozvrat),
+        "Carrier Code":        val(r.kodPerevozchika),
+        "Issue Date":          val(r.issueDate),
+        "Realization Date":    val(r.realizationDate)
+    };
 }
 
 export const Exporter = {
-    toUnifiedJson({ category, rows }){
-        const blocks = [];
-        const pushRecord = (cat, row) => {
-            const key = String(cat || '').toLowerCase() || 'air';
-            const mapped = buildExportRecord(row || {});
-            blocks.push({ [key]: [ mapped ] });
-        };
-
-        if (category && Array.isArray(rows)) {
-            for (const r of rows) pushRecord(category, r);
-        } else if (Array.isArray(rows)) {
-            for (const r of rows) {
-                const cat = String(r?.category || category || 'air').toLowerCase();
-                pushRecord(cat, r);
-            }
-        }
-
+    /**
+     * Преобразует массив нормализованных строк таблицы в массив JSON-объектов
+     * (по одному объекту на строку).
+     */
+    toUnifiedJson({ rows }){
+        const safeRows = Array.isArray(rows) ? rows : [];
+        const blocks = safeRows.map(mapRowToExport);
+        // Возвращаем именно массив блоков — "каждая строка таблицы отдельным блоком"
         return blocks;
     }
 };

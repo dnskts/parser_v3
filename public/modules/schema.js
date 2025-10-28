@@ -1,6 +1,6 @@
 // public/modules/schema.js
-// Единая схема полей таблицы.
-// ДОБАВЛЕНО: "Стоимость" (stoimost, number)
+// Единая схема таблицы данных.
+// Новое поле: "Отель" (hotelName), тип string.
 
 function toNumber(val) {
     if (val === null || val === undefined || val === '') return '';
@@ -40,35 +40,37 @@ function toIsoDate(val) {
 
 export const Schema = {
     _columns: [
-        { key: 'nomerProdukta',        title: 'Номер продукта',        type: 'string'  },
-        { key: 'dataSozdaniya',        title: 'Дата создания',         type: 'date'    },
-        { key: 'tipProdukta',          title: 'Тип продукта',          type: 'string'  },
-        { key: 'operatsiya',           title: 'Операция',              type: 'string'  },
-        { key: 'nomerZakaza',          title: 'Номер заказа',          type: 'string'  },
-        { key: 'passazhirFamiliya',    title: 'Пассажир Фамилия',      type: 'string'  },
-        { key: 'passazhirImya',        title: 'Пассажир Имя',          type: 'string'  },
-        { key: 'pnr',                  title: 'PNR',                   type: 'string'  },
-        { key: 'punktOtpravleniya',    title: 'Пункт отправления',     type: 'string'  },
-        { key: 'punktPribytiya',       title: 'Пункт прибытия',        type: 'string'  },
+        { key: 'nomerProdukta',          title: 'Номер продукта',        type: 'string'  },
+        { key: 'dataSozdaniya',          title: 'Дата создания',         type: 'date'    },
+        { key: 'tipProdukta',            title: 'Тип продукта',          type: 'string'  },
+        { key: 'operatsiya',             title: 'Операция',              type: 'string'  },
+        { key: 'nomerZakaza',            title: 'Номер заказа',          type: 'string'  },
+        { key: 'passazhirFamiliya',      title: 'Пассажир Фамилия',      type: 'string'  },
+        { key: 'passazhirImya',          title: 'Пассажир Имя',          type: 'string'  },
+        { key: 'pnr',                    title: 'PNR',                   type: 'string'  },
+        { key: 'punktOtpravleniya',      title: 'Пункт отправления',     type: 'string'  },
+        { key: 'punktPribytiya',         title: 'Пункт прибытия',        type: 'string'  },
+        { key: 'hotelName',              title: 'Отель',                 type: 'string'  }, // NEW
 
-        /* Денежные поля */
-        { key: 'stoimost',             title: 'Стоимость',             type: 'number'  }, // ИТОГО/total
-        { key: 'fareValue',            title: 'Тариф',                 type: 'number'  }, // Fare
-        { key: 'taxesValue',           title: 'Таксы',                 type: 'number'  }, // сумма всех такс (вкл. НДС)
-        { key: 'vat',                  title: 'Vat',                   type: 'number'  }, // НДС
+        // Денежные
+        { key: 'stoimost',               title: 'Стоимость',             type: 'number'  },
+        { key: 'fareValue',              title: 'Тариф',                 type: 'number'  }, // экспорт: Fare
+        { key: 'taxesValue',             title: 'Таксы',                 type: 'number'  }, // экспорт: Taxes
+        { key: 'vat',                    title: 'Vat',                   type: 'number'  }, // экспорт: VAT
+        { key: 'railService',            title: 'Сервис ЖД',             type: 'number'  },
 
-        { key: 'sborPostavshchika',    title: 'Сбор поставщика',       type: 'number'  },
-        { key: 'komissiyaPostavshchika', title: 'Комиссия поставщика', type: 'number'  },
-        { key: 'valyuta',              title: 'Валюта',                type: 'string'  },
-        { key: 'spisokTaks',           title: 'Список такс',           type: 'string'  },
+        { key: 'sborPostavshchika',      title: 'Сбор поставщика',       type: 'number'  },
+        { key: 'komissiyaPostavshchika', title: 'Комиссия поставщика',   type: 'number'  },
+        { key: 'valyuta',                title: 'Валюта',                type: 'string'  },
+        { key: 'spisokTaks',             title: 'Список такс',           type: 'string'  },
 
-        { key: 'dataVyleta',           title: 'Дата вылета',           type: 'date'    },
-        { key: 'emd',                  title: 'EMD?',                  type: 'boolean' },
-        { key: 'kategoriyaEmd',        title: 'Категория EMD',         type: 'string'  },
-        { key: 'shtrafZaVozvrat',      title: 'Штраф за возврат?',     type: 'boolean' },
-        { key: 'kodPerevozchika',      title: 'Код перевозчика',       type: 'string'  },
-        { key: 'issueDate',            title: 'Дата выписки',          type: 'date'    },
-        { key: 'realizationDate',      title: 'Дата реализации',       type: 'date'    }
+        { key: 'dataVyleta',             title: 'Дата вылета',           type: 'date'    },
+        { key: 'emd',                    title: 'EMD?',                  type: 'boolean' },
+        { key: 'kategoriyaEmd',          title: 'Категория EMD',         type: 'string'  },
+        { key: 'shtrafZaVozvrat',        title: 'Штраф за возврат?',     type: 'boolean' },
+        { key: 'kodPerevozchika',        title: 'Код перевозчика',       type: 'string'  },
+        { key: 'issueDate',              title: 'Дата выписки',          type: 'date'    },
+        { key: 'realizationDate',        title: 'Дата реализации',       type: 'date'    }
     ],
 
     getColumns(){ return this._columns; },
@@ -89,12 +91,14 @@ export const Schema = {
                     default: out[col.key] = (v === null || v === undefined) ? '' : String(v);
                 }
             }
-            // Дата реализации по правилу
+
+            // Правило "Дата реализации"
             out.realizationDate = this.computeRealizationDate({
                 category: raw.category || '',
                 issueDate: out.issueDate,
                 checkOutDate: out.checkOutDate || ''
             });
+
             return out;
         });
     },
