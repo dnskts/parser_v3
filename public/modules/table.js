@@ -58,6 +58,15 @@ export class Table{
     }
 
     _formatCell(value, col){
+        // Специальная обработка для колонки "API"
+        if ((col.key || '').toLowerCase() === 'apilink' && value) {
+            const a = document.createElement('a');
+            a.href = value;
+            a.target = '_blank';
+            a.textContent = 'API';
+            return a;
+        }
+        
         // Специальная окраска для колонки "Операция"
         if ((col.key || '').toLowerCase() === 'operatsiya') {
             return this._makeStatusBadge(value);

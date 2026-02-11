@@ -1,0 +1,11 @@
+{
+  "id": "p_2dlsvk0s",
+  "name": "MyAgentAPI",
+  "type": "air",
+  "baseUrl": "http://api-dev.myagent.online/api",
+  "authType": "none",
+  "token": "",
+  "username": "",
+  "password": "",
+  "note": ""
+}

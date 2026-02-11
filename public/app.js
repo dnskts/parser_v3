@@ -104,8 +104,8 @@ initLoader({
         const markOk = ()=> upsertFileStatus(fileName, { ok: true, message: '' });
 
         const det = ParserRegistry.detectFromXml(content);
-        const supplierCode = det?.supplierCode;
-        const category = det?.category;
+        const supplierCode = det && typeof det.supplierCode !== 'undefined' ? det.supplierCode : null;
+        const category = det && typeof det.category !== 'undefined' ? det.category : null;
 
         if(!supplierCode){
             markError('Не удалось определить поставщика по содержимому XML.');

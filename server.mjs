@@ -37,6 +37,8 @@ function contentTypeByExt(ext) {
         case '.png':  return 'image/png';
         case '.jpg':
         case '.jpeg': return 'image/jpeg';
+        case '.xml':  return 'application/xml; charset=utf-8';
+        case '.txt':  return 'text/plain; charset=utf-8';
         default:      return 'application/octet-stream';
     }
 }
@@ -55,10 +57,18 @@ function serveStatic(req, res) {
     if (!absPath.startsWith(ROOT)) {
         return send(res, 403, 'Forbidden');
     }
+    
+    // Проверяем тип файла для безопасности
+    const ext = path.extname(absPath).toLowerCase();
+    const allowedExtensions = ['.html', '.js', '.css', '.json', '.svg', '.png', '.jpg', '.jpeg', '.txt', '.xml', '.ico', '.woff', '.woff2', '.ttf', '.eot'];
+    
+    if (!allowedExtensions.includes(ext)) {
+        return send(res, 403, 'Forbidden file type');
+    }
 
     fsp.readFile(absPath)
         .then(buf => {
-            const ct = contentTypeByExt(path.extname(absPath).toLowerCase());
+            const ct = contentTypeByExt(ext);
             send(res, 200, buf, { 'Content-Type': ct });
         })
         .catch(() => send(res, 404, 'Not found'));

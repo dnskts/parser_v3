@@ -14,16 +14,23 @@
 function toNumber(val) {
     // Преобразуем значение к числу. Если не получилось — возвращаем пустую строку.
     if (val === null || val === undefined || val === '') return '';
-    const s = String(val).trim().replace(/\s+/g, '').replace(',', '.');
-    const n = Number(s);
+    // Проверяем, является ли значение числом или строкой, содержащей число
+    const strVal = String(val).trim();
+    if (strVal === '') return '';
+    
+    // Удаляем лишние символы и заменяем запятую на точку
+    const cleanVal = strVal.replace(/[^\d.,\-+e]/gi, '').replace(',', '.');
+    if (cleanVal === '') return '';
+    
+    const n = Number(cleanVal);
     return Number.isFinite(n) ? n : '';
 }
 function toBoolean(val) {
-    // Преобразуем к true/false. Если распознать не удалось — пустая строка.
+    // Преобразуем к true/false. Если распознать не удалось — возвращаем пустую строку.
     if (val === null || val === undefined || val === '') return '';
     const s = String(val).trim().toLowerCase();
-    if (['true','1','y','yes','да','д','истина'].includes(s)) return true;
-    if (['false','0','n','no','нет','н','ложь'].includes(s)) return false;
+    if (['true','1','y','yes','да','д','истина','on','enabled'].includes(s)) return true;
+    if (['false','0','n','no','нет','н','ложь','off','disabled'].includes(s)) return false;
     return '';
 }
 function toIsoDate(val) {
@@ -92,6 +99,8 @@ export const Schema = {
         { key: 'carrierCode',         title: 'Код перевозчика',       type: 'string'  },
         { key: 'issueDate',           title: 'Дата выписки',          type: 'date'    },
         { key: 'realizationDate',     title: 'Дата реализации',       type: 'date'    },
+        
+        { key: 'apiLink',             title: 'API',                   type: 'string'  },
 
         // Служебное поле для логики (не показываем в таблице, но оставляем, если нужно)
         // { key: 'category',         title: '(Категория)',           type: 'string'  },

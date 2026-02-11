@@ -389,6 +389,11 @@ export default {
         if (!rows.length){
             throw new Error('Парсер МОМ отработал, но данных не найдено.');
         }
-        return { category: null, rows };
+        
+        // Определяем общую категорию на основе первых записей
+        const categories = [...new Set(rows.map(r => r.category))];
+        const commonCategory = categories.length === 1 ? categories[0] : 'mixed';
+        
+        return { category: commonCategory, rows };
     }
 };

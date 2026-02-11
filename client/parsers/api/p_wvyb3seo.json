@@ -1,0 +1,11 @@
+{
+  "id": "p_wvyb3seo",
+  "name": "MyAgentAPI2",
+  "type": "mixed",
+  "baseUrl": "http://api-dev.myagent.online/api",
+  "authType": "none",
+  "token": "",
+  "username": "",
+  "password": "",
+  "note": ""
+}
